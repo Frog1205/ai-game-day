@@ -145,6 +145,15 @@ body::before{
 }
 .card-c:hover{border-color:rgba(218,165,32,.4)}
 
+/* 类型 D - 端午红绿 */
+.card-d .type-badge{
+  background:linear-gradient(135deg,#2e7d32,#d32f2f);
+}
+.card-d::before{
+  background:linear-gradient(135deg,rgba(46,125,50,.05),rgba(211,47,47,.08));
+}
+.card-d:hover{border-color:rgba(255,179,0,.4)}
+
 /* 卡片内容 */
 .card-info{min-width:0}
 .card-info h2{
@@ -180,6 +189,9 @@ body::before{
 .card-c .card-action{
   background:linear-gradient(135deg,#b8860b,#daa520);color:#1a0a05;
 }
+.card-d .card-action{
+  background:linear-gradient(135deg,#2e7d32,#d32f2f);
+}
 .card-action .arrow{
   transition:transform .3s;font-size:18px;
 }
@@ -213,7 +225,7 @@ body::before{
 <header class="header">
   <div class="logo">AI CREATOR CAMP</div>
   <h1 class="title">AI创客家 · 一日游戏体验</h1>
-  <p class="subtitle">三个 AI 生成的游戏，从休闲解谜到策略竞技，等你挑战</p>
+  <p class="subtitle">四个 AI 生成的游戏，从休闲解谜到竞速策略，等你挑战</p>
   <div class="divider"></div>
 </header>
 
@@ -262,6 +274,21 @@ body::before{
       </div>
     </div>
     <div class="card-action">开始对战 <span class="arrow">→</span></div>
+  </a>
+
+  <!-- 类型 D：竞速 / 端午 -->
+  <a class="game-card card-d" href="龙舟追粽赛-升级.html">
+    <div class="type-badge">D<span class="type-label">竞速</span></div>
+    <div class="card-info">
+      <h2><span class="emoji">🐉</span> 龙舟追粽赛</h2>
+      <p class="card-desc">端午湖面竞速！划动龙舟追逐漂流的粽子，躲避水草与漩涡，挑战最快时间。节奏感与反应力的双重考验，看你能否夺得头筹。</p>
+      <div class="card-tags">
+        <span class="tag">竞速</span>
+        <span class="tag">端午主题</span>
+        <span class="tag">反应力</span>
+      </div>
+    </div>
+    <div class="card-action">开始竞速 <span class="arrow">→</span></div>
   </a>
 
 </main>

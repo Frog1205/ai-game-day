@@ -1,0 +1,4355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>龙舟追粽赛｜端午湖面竞速</title>
+    <!-- 引入Google Fonts提升英文字体和数字美感，中文字体采用系统安全字体回退 -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* ==================== 1. 设计系统与基础样式 ==================== */
+        :root {
+            --primary-red: #d32f2f;
+            --primary-gold: #ffb300;
+            --primary-green: #2e7d32;
+            --bg-dark: #0a1f1d;
+            --text-light: #f5f5f5;
+            --glass-bg: rgba(255, 255, 255, 0.12);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --shadow-gold: 0 0 20px rgba(255, 179, 0, 0.4);
+            --shadow-neon: 0 0 25px rgba(46, 125, 50, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            background: radial-gradient(circle at center, #113c34 0%, #051614 100%);
+            font-family: 'PingFang SC', 'Microsoft YaHei', 'Outfit', sans-serif;
+            color: var(--text-light);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* 游戏总容器，保持 900x600 比例并自适应缩放 */
+        #game-wrapper {
+            position: relative;
+            width: 900px;
+            height: 600px;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), var(--shadow-gold);
+            border: 4px solid var(--primary-gold);
+            background-color: #0d2f2b;
+        }
+
+        /* Canvas 画布 */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #1fa2ff 0%, #12d6df 50%, #a6ffcb 100%);
+        }
+
+        /* ==================== 2. HUD (顶部状态栏) ==================== */
+        #hud-container {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            height: 60px;
+            background: rgba(10, 31, 29, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1.5px solid var(--glass-border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 10;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            pointer-events: none; /* 防止遮挡鼠标点击 */
+        }
+
+        .hud-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .hud-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .hud-label {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: bold;
+        }
+
+        .hud-value {
+            font-size: 18px;
+            font-weight: 900;
+            color: var(--primary-gold);
+            font-family: 'Outfit', 'Microsoft YaHei', sans-serif;
+            text-shadow: 0 0 8px rgba(255, 179, 0, 0.5);
+        }
+
+        .hud-value.accent-red {
+            color: #ff5252;
+            text-shadow: 0 0 8px rgba(255, 82, 82, 0.5);
+        }
+
+        .hud-value.accent-green {
+            color: #69f0ae;
+            text-shadow: 0 0 8px rgba(105, 240, 174, 0.5);
+        }
+
+        /* 进度条样式 */
+        .progress-container {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            width: 100px;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.1s linear;
+        }
+
+        #energy-fill {
+            background: linear-gradient(90deg, #2979ff, #00e5ff);
+            box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+        }
+
+        #stability-fill {
+            background: linear-gradient(90deg, #ff5252, #ffb300);
+            box-shadow: 0 0 8px rgba(255, 82, 82, 0.6);
+        }
+
+        /* 名次徽章 */
+        #rank-badge {
+            background: linear-gradient(135deg, var(--primary-gold), #f57c00);
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 900;
+            font-size: 16px;
+            box-shadow: var(--shadow-gold);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        /* ==================== 3. 页面遮罩层与面板 (Start, Game Over) ==================== */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 22, 20, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        .overlay.hidden {
+            opacity: 0;
+            transform: scale(0.95);
+            pointer-events: none;
+        }
+
+        .panel {
+            background: linear-gradient(135deg, rgba(13, 47, 43, 0.95) 0%, rgba(6, 27, 25, 0.98) 100%);
+            border: 3px solid var(--primary-gold);
+            border-radius: 24px;
+            padding: 35px;
+            width: 760px;
+            text-align: center;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(46, 125, 50, 0.2);
+            position: relative;
+        }
+
+        /* 中国风装饰角 */
+        .panel::before, .panel::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--primary-gold);
+        }
+        .panel::before { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+        .panel::after { bottom: 12px; right: 12px; border-left: none; border-top: none; }
+
+        h1.game-title {
+            font-size: 48px;
+            font-weight: 900;
+            background: linear-gradient(180deg, #fff59d 0%, #ffb300 40%, #ff6f00 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            margin-bottom: 5px;
+            letter-spacing: 2px;
+            animation: pulseTitle 2s infinite ease-in-out;
+        }
+
+        .game-subtitle {
+            font-size: 16px;
+            color: #81c784;
+            margin-bottom: 25px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        /* 规则与角色网格 */
+        .intro-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 20px;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+
+        .intro-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .intro-card h3 {
+            color: var(--primary-gold);
+            font-size: 16px;
+            margin-bottom: 10px;
+            border-bottom: 1.5px solid rgba(255, 179, 0, 0.3);
+            padding-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .intro-card ul {
+            list-style: none;
+            font-size: 13px;
+            line-height: 1.8;
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .intro-card li {
+            margin-bottom: 5px;
+            display: flex;
+            align-items: flex-start;
+            gap: 4px;
+        }
+
+        /* 角色卡片内联指示 */
+        .role-desc {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .role-color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* 按钮设计 */
+        .btn-action {
+            background: linear-gradient(180deg, #4caf50 0%, #2e7d32 100%);
+            border: 2px solid #a5d6a7;
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+            padding: 12px 45px;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(46, 125, 50, 0.4);
+            transition: all 0.2s ease;
+            outline: none;
+            letter-spacing: 1px;
+        }
+
+        .btn-action:hover {
+            transform: translateY(-3px) scale(1.05);
+            box-shadow: 0 12px 25px rgba(76, 175, 80, 0.6), var(--shadow-neon);
+            background: linear-gradient(180deg, #66bb6a 0%, #388e3c 100%);
+        }
+
+        .btn-action:active {
+            transform: translateY(1px);
+        }
+
+        /* 结算界面独特样式 */
+        .result-title {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .result-title.win {
+            color: #69f0ae;
+            text-shadow: 0 0 15px rgba(105, 240, 174, 0.4);
+        }
+        .result-title.lose {
+            color: #ff5252;
+            text-shadow: 0 0 15px rgba(255, 82, 82, 0.4);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .stat-box .num {
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--primary-gold);
+            font-family: 'Outfit', sans-serif;
+            margin-top: 5px;
+        }
+
+        .blessing-text {
+            font-size: 16px;
+            color: #ffe082;
+            font-style: italic;
+            margin-bottom: 30px;
+        }
+
+        /* 动画定义 */
+        @keyframes pulseTitle {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        /* 队伍选择区域样式 */
+        .team-selection-section {
+            margin: 15px 0;
+            width: 100%;
+        }
+        .selection-title {
+            font-size: 16px;
+            color: var(--primary-gold);
+            margin-bottom: 12px;
+            text-align: center;
+            font-weight: bold;
+            letter-spacing: 1px;
+            text-shadow: 0 0 5px rgba(255, 179, 0, 0.4);
+        }
+        .team-cards-container {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            width: 100%;
+        }
+        .team-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 10px;
+            width: 215px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .team-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 179, 0, 0.4);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .team-card.selected {
+            background: rgba(255, 179, 0, 0.12);
+            border-color: var(--primary-gold);
+            box-shadow: 0 0 15px rgba(255, 179, 0, 0.25);
+            transform: scale(1.02);
+        }
+        .team-icon {
+            font-size: 24px;
+            margin-bottom: 2px;
+        }
+        .team-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #ffffff;
+        }
+        .team-stats {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            gap: 10px;
+        }
+        .team-desc {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            line-height: 1.3;
+        }
+
+        /* ==================== 4. 浮动键位指引 ==================== */
+        .control-tips {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 15px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .key-btn {
+            background: #263238;
+            border: 1px solid #37474f;
+            border-radius: 4px;
+            padding: 2px 6px;
+            color: #eceff1;
+            font-family: monospace;
+            box-shadow: 0 2px 0 #000;
+        }
+    
+        /* ==================== 首页湖面主视觉优化版 ==================== */
+        .overlay {
+            background:
+                radial-gradient(circle at 18% 12%, rgba(255, 236, 179, 0.16), transparent 28%),
+                radial-gradient(circle at 85% 18%, rgba(129, 212, 250, 0.14), transparent 26%),
+                rgba(5, 22, 20, 0.82);
+        }
+
+        .panel.start-panel {
+            width: 800px;
+            padding: 24px 26px 22px;
+        }
+
+        .lake-hero {
+            position: relative;
+            height: 174px;
+            margin-bottom: 16px;
+            border-radius: 20px;
+            overflow: hidden;
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+            background:
+                linear-gradient(180deg, rgba(179, 231, 255, 0.98) 0%, rgba(77, 195, 221, 0.96) 45%, rgba(0, 122, 141, 0.98) 100%);
+            box-shadow:
+                inset 0 -22px 42px rgba(0, 55, 70, 0.22),
+                0 12px 28px rgba(0, 0, 0, 0.28);
+        }
+
+        .lake-hero::before {
+            content: '';
+            position: absolute;
+            left: -8%;
+            right: -8%;
+            bottom: 28px;
+            height: 48px;
+            background:
+                radial-gradient(circle at 10% 48%, rgba(255,255,255,0.32) 0 8px, transparent 9px),
+                radial-gradient(circle at 32% 42%, rgba(255,255,255,0.20) 0 10px, transparent 11px),
+                radial-gradient(circle at 58% 56%, rgba(255,255,255,0.22) 0 9px, transparent 10px),
+                radial-gradient(circle at 82% 50%, rgba(255,255,255,0.26) 0 7px, transparent 8px);
+            opacity: 0.95;
+            animation: heroWave 4s ease-in-out infinite;
+        }
+
+        .lake-hero::after {
+            content: '';
+            position: absolute;
+            left: -10%;
+            right: -10%;
+            bottom: -2px;
+            height: 56px;
+            background:
+                radial-gradient(ellipse at 10% 100%, rgba(255,255,255,0.30) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 30% 100%, rgba(255,255,255,0.22) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 50% 100%, rgba(255,255,255,0.26) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 70% 100%, rgba(255,255,255,0.22) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 90% 100%, rgba(255,255,255,0.28) 0 18%, transparent 20%);
+            opacity: 0.95;
+        }
+
+        @keyframes heroWave {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(18px); }
+        }
+
+        .hero-badge-row {
+            position: absolute;
+            top: 14px;
+            left: 18px;
+            right: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 2;
+        }
+
+        .hero-badge {
+            background: rgba(255,255,255,0.18);
+            border: 1px solid rgba(255,255,255,0.30);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #ffffff;
+            font-weight: bold;
+            backdrop-filter: blur(6px);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.28);
+        }
+
+        .hero-main-text {
+            position: absolute;
+            top: 42px;
+            left: 0;
+            right: 0;
+            z-index: 2;
+            text-align: center;
+        }
+
+        .hero-main-text .game-title {
+            margin-bottom: 7px;
+            font-size: 46px;
+        }
+
+        .hero-main-text .game-subtitle {
+            margin-bottom: 0;
+            color: #fff3cd;
+            font-size: 15px;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.25);
+        }
+
+        .hero-lotus {
+            position: absolute;
+            width: 44px;
+            height: 44px;
+            background: #43a047;
+            border-radius: 50% 45% 50% 35%;
+            opacity: 0.92;
+            box-shadow: inset -6px -6px 0 rgba(0,0,0,0.08);
+            z-index: 2;
+        }
+
+        .hero-lotus.l1 { left: 28px; bottom: 18px; transform: rotate(-12deg); }
+        .hero-lotus.l2 { right: 44px; bottom: 22px; transform: rotate(14deg); width: 36px; height: 36px; }
+
+        .hero-zongzi {
+            position: absolute;
+            right: 18px;
+            top: 50px;
+            font-size: 24px;
+            z-index: 2;
+            transform: rotate(8deg);
+            filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25));
+        }
+
+        .preview-boat-row {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 18px;
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            z-index: 2;
+        }
+
+        .preview-boat {
+            min-width: 138px;
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(8, 46, 58, 0.36);
+            border: 1px solid rgba(255,255,255,0.24);
+            color: #fff;
+            font-size: 13px;
+            font-weight: bold;
+            backdrop-filter: blur(6px);
+            text-align: center;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .preview-boat.ai { box-shadow: 0 0 12px rgba(33, 150, 243, 0.28); }
+        .preview-boat.turtle { box-shadow: 0 0 12px rgba(76, 175, 80, 0.28); }
+        .preview-boat.rabbit { box-shadow: 0 0 12px rgba(255, 128, 171, 0.28); }
+
+        .panel.start-panel .intro-grid {
+            margin-bottom: 14px;
+            gap: 14px;
+        }
+
+        .panel.start-panel .intro-card {
+            padding: 12px 14px;
+        }
+
+        .panel.start-panel .intro-card ul {
+            font-size: 12.5px;
+            line-height: 1.65;
+        }
+
+        .team-selection-section {
+            margin: 10px 0 0;
+        }
+
+        .team-cards-container {
+            gap: 16px;
+            margin-top: 8px;
+        }
+
+        .team-card {
+            width: 224px;
+            min-height: 128px;
+            justify-content: center;
+            padding: 12px 10px;
+        }
+
+        .team-icon {
+            font-size: 30px;
+            margin-bottom: 3px;
+        }
+
+        .team-name {
+            font-size: 16px;
+        }
+
+        .team-stats {
+            font-size: 11px;
+            flex-direction: column;
+            gap: 3px;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .team-desc {
+            font-size: 11px;
+            color: rgba(255,255,255,0.72);
+            line-height: 1.35;
+            margin-top: 3px;
+        }
+
+        .selected-boat-tip {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ffe082;
+            font-weight: bold;
+        }
+
+        .panel.start-panel .btn-action {
+            margin-top: 8px;
+            font-size: 20px;
+            padding: 11px 38px;
+        }
+
+        .panel.start-panel .control-tips {
+            margin-top: 10px;
+        }
+
+    
+        /* ==================== 首页入口防遮挡修复版 ==================== */
+        .panel.start-panel {
+            width: 800px;
+            padding: 16px 22px 14px;
+            max-height: 560px;
+            overflow: hidden;
+        }
+
+        .panel.start-panel::before,
+        .panel.start-panel::after {
+            width: 16px;
+            height: 16px;
+        }
+
+        .lake-hero {
+            height: 126px;
+            margin-bottom: 10px;
+            border-radius: 18px;
+        }
+
+        .hero-badge-row {
+            top: 10px;
+            left: 16px;
+            right: 16px;
+        }
+
+        .hero-badge {
+            padding: 4px 10px;
+            font-size: 11px;
+        }
+
+        .hero-main-text {
+            top: 27px;
+        }
+
+        .hero-main-text .game-title {
+            font-size: 38px;
+            margin-bottom: 2px;
+            line-height: 1.05;
+        }
+
+        .hero-main-text .game-subtitle {
+            font-size: 13px;
+        }
+
+        .hero-lotus.l1 {
+            left: 26px;
+            bottom: 12px;
+            width: 36px;
+            height: 36px;
+        }
+
+        .hero-lotus.l2 {
+            right: 42px;
+            bottom: 14px;
+            width: 30px;
+            height: 30px;
+        }
+
+        .hero-zongzi {
+            right: 34px;
+            top: 33px;
+            font-size: 20px;
+        }
+
+        .preview-boat-row {
+            bottom: 10px;
+            gap: 12px;
+        }
+
+        .preview-boat {
+            min-width: 128px;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .panel.start-panel .intro-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 9px;
+        }
+
+        .panel.start-panel .intro-card {
+            padding: 10px 12px;
+            border-radius: 11px;
+        }
+
+        .panel.start-panel .intro-card h3 {
+            font-size: 14px;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+        }
+
+        .panel.start-panel .intro-card ul {
+            font-size: 11.5px;
+            line-height: 1.48;
+        }
+
+        .panel.start-panel .intro-card li {
+            margin-bottom: 3px;
+        }
+
+        .team-selection-section {
+            margin: 6px 0 0;
+        }
+
+        .selection-title {
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .team-cards-container {
+            gap: 14px;
+            margin-top: 4px;
+        }
+
+        .team-card {
+            width: 210px;
+            min-height: 104px;
+            padding: 8px 9px;
+            border-radius: 13px;
+            gap: 2px;
+        }
+
+        .team-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .team-icon {
+            font-size: 24px;
+            margin-bottom: 1px;
+        }
+
+        .team-name {
+            font-size: 14px;
+        }
+
+        .team-stats {
+            font-size: 10.5px;
+            gap: 2px;
+            margin-top: 2px;
+        }
+
+        .team-desc {
+            font-size: 10px;
+            line-height: 1.28;
+            margin-top: 2px;
+        }
+
+        .selected-boat-tip {
+            margin-top: 6px;
+            font-size: 13px;
+        }
+
+        .panel.start-panel .btn-action {
+            margin-top: 6px;
+            font-size: 18px;
+            padding: 8px 32px;
+            border-radius: 26px;
+        }
+
+        .panel.start-panel .control-tips {
+            margin-top: 6px;
+            font-size: 10.5px;
+        }
+
+        .key-btn {
+            padding: 1px 5px;
+        }
+
+        @media (max-height: 650px) {
+            body {
+                justify-content: flex-start;
+                padding-top: 8px;
+            }
+            #game-wrapper {
+                transform: scale(0.92);
+                transform-origin: top center;
+            }
+        }
+
+        @media (max-width: 920px) {
+            #game-wrapper {
+                width: 96vw;
+                height: calc(96vw * 2 / 3);
+            }
+
+            .panel.start-panel {
+                width: calc(96vw - 80px);
+            }
+        }
+
+    
+        /* ==================== 首页去掉内层边框 ==================== */
+        .panel.start-panel {
+            border: none !important;
+            box-shadow: none !important;
+            background:
+                radial-gradient(circle at 50% 0%, rgba(255, 179, 0, 0.06), transparent 28%),
+                linear-gradient(135deg, rgba(13, 47, 43, 0.86) 0%, rgba(6, 27, 25, 0.92) 100%);
+        }
+
+        .panel.start-panel::before,
+        .panel.start-panel::after {
+            display: none !important;
+        }
+
+    
+        /* ==================== 游戏过程控制按钮：暂停 / 休息 / 加速 ==================== */
+        #game-control-panel {
+            position: absolute;
+            top: 88px;
+            right: 14px;
+            z-index: 12;
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 6px;
+            background: rgba(5, 22, 20, 0.62);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 14px;
+            padding: 8px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.28);
+        }
+
+        .game-control-row {
+            display: flex;
+            gap: 6px;
+        }
+
+        .game-control-btn {
+            min-width: 76px;
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: 10px;
+            padding: 7px 8px;
+            color: #ffffff;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            background: rgba(255,255,255,0.10);
+            transition: all 0.18s ease;
+        }
+
+        .game-control-btn:hover {
+            transform: translateY(-1px);
+            background: rgba(255, 179, 0, 0.18);
+            border-color: rgba(255, 179, 0, 0.55);
+        }
+
+        .game-control-btn.active {
+            background: linear-gradient(180deg, #ffb300 0%, #f57c00 100%);
+            border-color: #ffe082;
+            color: #102420;
+            box-shadow: 0 0 14px rgba(255, 179, 0, 0.45);
+        }
+
+        #mode-status {
+            text-align: center;
+            font-size: 11px;
+            color: #ffe082;
+            line-height: 1.35;
+            min-height: 16px;
+        }
+
+        .overlay:not(.hidden) ~ #game-control-panel,
+        #start-overlay:not(.hidden) ~ #game-control-panel,
+        #end-overlay:not(.hidden) ~ #game-control-panel {
+            display: none;
+        }
+
+    
+        /* ==================== 休息模式返回按钮 ==================== */
+        #btn-end-rest {
+            display: none;
+            width: 100%;
+            margin-top: 2px;
+            background: linear-gradient(180deg, #81c784 0%, #43a047 100%);
+            border-color: rgba(220,255,220,0.55);
+            color: #ffffff;
+        }
+
+        #btn-end-rest.show {
+            display: block;
+        }
+
+    
+        /* ==================== 首页简洁吸睛版 ==================== */
+        .panel.start-panel.simple-home {
+            width: 790px;
+            padding: 24px 26px 20px;
+            max-height: 560px;
+            overflow: hidden;
+        }
+
+        .simple-home .home-lake-hero {
+            height: 238px;
+            margin-bottom: 18px;
+        }
+
+        .simple-home .hero-main-text {
+            top: 58px;
+        }
+
+        .simple-home .hero-main-text .game-title {
+            font-size: 58px;
+            line-height: 1;
+            margin-bottom: 8px;
+            letter-spacing: 4px;
+            filter: drop-shadow(0 6px 10px rgba(0,0,0,0.25));
+        }
+
+        .simple-home .hero-main-text .game-subtitle {
+            font-size: 18px;
+            color: #fff8d7;
+            letter-spacing: 5px;
+        }
+
+        .simple-home .hero-lotus.l1 {
+            width: 58px;
+            height: 58px;
+            bottom: 34px;
+            left: 42px;
+        }
+
+        .simple-home .hero-lotus.l2 {
+            width: 48px;
+            height: 48px;
+            bottom: 42px;
+            right: 54px;
+        }
+
+        .simple-home .hero-zongzi {
+            top: 68px;
+            right: 70px;
+            font-size: 34px;
+        }
+
+        .simple-home .preview-boat-row {
+            bottom: 34px;
+            gap: 20px;
+        }
+
+        .simple-home .preview-boat {
+            min-width: 130px;
+            padding: 8px 16px;
+            font-size: 16px;
+            background: rgba(4, 42, 56, 0.46);
+        }
+
+        .simple-selection {
+            margin-top: 0;
+        }
+
+        .simple-selection .selection-title {
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .simple-selection .team-cards-container {
+            gap: 18px;
+        }
+
+        .simple-selection .team-card {
+            min-height: 108px;
+            width: 220px;
+            padding: 12px 10px;
+            border-radius: 18px;
+        }
+
+        .simple-selection .team-icon {
+            font-size: 32px;
+            margin-bottom: 4px;
+        }
+
+        .simple-selection .team-name {
+            font-size: 17px;
+        }
+
+        .stat-pills {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .stat-pills span {
+            font-size: 12px;
+            color: #ffe082;
+            border: 1px solid rgba(255, 224, 130, 0.34);
+            background: rgba(255, 179, 0, 0.12);
+            border-radius: 999px;
+            padding: 3px 9px;
+        }
+
+        .simple-home .selected-boat-tip {
+            margin-top: 10px;
+            font-size: 15px;
+        }
+
+        .home-actions {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 14px;
+            margin-top: 12px;
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.10);
+            border-color: rgba(255,255,255,0.30);
+            color: #ffffff;
+            box-shadow: none;
+            font-size: 18px;
+            padding-left: 28px;
+            padding-right: 28px;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 179, 0, 0.18);
+            border-color: rgba(255, 224, 130, 0.65);
+        }
+
+        .help-panel {
+            width: 650px;
+            padding: 28px 32px;
+            border: none !important;
+            box-shadow: 0 20px 45px rgba(0,0,0,0.55) !important;
+        }
+
+        .help-panel::before,
+        .help-panel::after {
+            display: none !important;
+        }
+
+        .help-title {
+            color: #ffca28;
+            font-size: 34px;
+            margin-bottom: 18px;
+            letter-spacing: 2px;
+        }
+
+        .help-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            text-align: left;
+        }
+
+        .help-card {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 14px;
+            padding: 14px;
+        }
+
+        .help-card h3 {
+            color: #ffe082;
+            font-size: 17px;
+            margin-bottom: 8px;
+        }
+
+        .help-card p {
+            color: rgba(255,255,255,0.86);
+            font-size: 14px;
+            line-height: 1.55;
+        }
+
+        .help-boat-tips {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .help-boat-tips span {
+            background: rgba(255, 179, 0, 0.12);
+            border: 1px solid rgba(255, 224, 130, 0.28);
+            color: #ffe082;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        @media (max-height: 650px) {
+            .simple-home .home-lake-hero {
+                height: 205px;
+            }
+            .simple-home .hero-main-text .game-title {
+                font-size: 50px;
+            }
+            .simple-selection .team-card {
+                min-height: 98px;
+            }
+        }
+
+    
+        /* ==================== 首页进一步极简：去掉顶部船只入口与浮动色块 ==================== */
+        .simple-home .preview-boat-row,
+        .simple-home .hero-lotus,
+        .simple-home .hero-zongzi {
+            display: none !important;
+        }
+
+        .simple-home .home-lake-hero {
+            height: 190px;
+            margin-bottom: 22px;
+        }
+
+        .simple-home .hero-main-text {
+            top: 56px;
+        }
+
+        .simple-home .hero-main-text .game-title {
+            font-size: 60px;
+            margin-bottom: 10px;
+        }
+
+        .simple-home .hero-main-text .game-subtitle {
+            font-size: 19px;
+        }
+
+        .simple-home .lake-hero::before {
+            opacity: 0.35;
+        }
+
+        .simple-home .lake-hero::after {
+            opacity: 0.42;
+        }
+
+    
+        /* ==================== 首页美化强化版 ==================== */
+        .premium-home {
+            width: 820px;
+            padding: 30px 30px 28px;
+            max-height: 560px;
+            border: none !important;
+            box-shadow: none !important;
+            background:
+                radial-gradient(circle at 50% -10%, rgba(255, 197, 82, 0.08), transparent 28%),
+                radial-gradient(circle at 15% 12%, rgba(76, 175, 80, 0.05), transparent 22%),
+                linear-gradient(135deg, rgba(10, 43, 40, 0.88) 0%, rgba(3, 28, 30, 0.92) 100%);
+        }
+
+        .premium-home::before,
+        .premium-home::after {
+            display: none !important;
+        }
+
+        .premium-home .home-lake-hero {
+            height: 205px;
+            margin-bottom: 28px;
+            border-radius: 28px;
+            background:
+                linear-gradient(180deg, rgba(180, 230, 248, 0.98) 0%, rgba(66, 185, 214, 0.98) 44%, rgba(10, 141, 165, 0.98) 100%);
+            box-shadow:
+                inset 0 -18px 32px rgba(4, 71, 88, 0.18),
+                0 14px 32px rgba(0, 0, 0, 0.20);
+        }
+
+        .premium-home .hero-badge-row {
+            top: 14px;
+            left: 22px;
+            right: 22px;
+        }
+
+        .premium-home .hero-badge {
+            background: rgba(255,255,255,0.20);
+            font-size: 12px;
+            padding: 7px 14px;
+        }
+
+        .premium-home .hero-main-text {
+            top: 44px;
+        }
+
+        .premium-home .hero-main-text .game-title {
+            font-size: 68px;
+            line-height: 1;
+            margin-bottom: 10px;
+            letter-spacing: 4px;
+            filter: drop-shadow(0 8px 12px rgba(0,0,0,0.26));
+        }
+
+        .premium-home .hero-main-text .game-subtitle {
+            font-size: 20px;
+            letter-spacing: 6px;
+            color: #fff8dd;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.20);
+        }
+
+        .hero-silhouette {
+            position: absolute;
+            bottom: 28px;
+            width: 120px;
+            height: 30px;
+            border-radius: 999px;
+            background: rgba(8, 74, 94, 0.28);
+            filter: blur(0.2px);
+        }
+
+        .hero-silhouette::before {
+            content: '';
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            top: -9px;
+            height: 12px;
+            border-radius: 999px 999px 12px 12px;
+            background: rgba(8, 74, 94, 0.24);
+        }
+
+        .hero-silhouette::after {
+            content: '';
+            position: absolute;
+            left: 10px;
+            right: 10px;
+            bottom: -8px;
+            height: 8px;
+            background:
+                linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.20) 20%, rgba(255,255,255,0.10) 60%, transparent 100%);
+            border-radius: 999px;
+        }
+
+        .hero-boat-left {
+            left: 120px;
+            transform: scale(0.84);
+            opacity: 0.60;
+        }
+
+        .hero-boat-right {
+            right: 125px;
+            transform: scale(0.72);
+            opacity: 0.45;
+        }
+
+        .hero-water-shine {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 44px;
+            background:
+                radial-gradient(ellipse at 10% 100%, rgba(255,255,255,0.24) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 32% 100%, rgba(255,255,255,0.14) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 54% 100%, rgba(255,255,255,0.22) 0 18%, transparent 20%),
+                radial-gradient(ellipse at 76% 100%, rgba(255,255,255,0.15) 0 18%, transparent 20%);
+        }
+
+        .premium-selection .selection-title {
+            font-size: 18px;
+            margin-bottom: 16px;
+            color: #ffca28;
+        }
+
+        .premium-selection .team-cards-container {
+            gap: 18px;
+        }
+
+        .premium-selection .team-card {
+            width: 242px;
+            min-height: 165px;
+            padding: 18px 16px 16px;
+            border-radius: 20px;
+            justify-content: flex-start;
+            align-items: stretch;
+            background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+            border: 1.5px solid rgba(255,255,255,0.14);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+        }
+
+        .premium-selection .team-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 202, 40, 0.38);
+        }
+
+        .premium-selection .team-card.selected {
+            background: linear-gradient(180deg, rgba(255, 202, 40, 0.13) 0%, rgba(255, 202, 40, 0.06) 100%);
+            border-color: rgba(255, 202, 40, 0.88);
+            box-shadow:
+                0 0 0 1px rgba(255, 202, 40, 0.18),
+                0 0 24px rgba(255, 202, 40, 0.18);
+        }
+
+        .team-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .premium-selection .team-icon {
+            width: 54px;
+            height: 54px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            background: rgba(255,255,255,0.08);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+            margin-bottom: 0;
+            flex-shrink: 0;
+        }
+
+        .team-heading {
+            text-align: left;
+        }
+
+        .premium-selection .team-name {
+            font-size: 16px;
+            font-weight: 900;
+            line-height: 1.2;
+            margin-bottom: 5px;
+        }
+
+        .team-role-tag {
+            display: inline-block;
+            font-size: 11px;
+            color: rgba(255,255,255,0.72);
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.10);
+            padding: 3px 8px;
+            border-radius: 999px;
+        }
+
+        .meter-wrap {
+            display: grid;
+            grid-template-columns: 32px 1fr;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 9px;
+        }
+
+        .meter-label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.72);
+            text-align: left;
+        }
+
+        .meter-bar {
+            height: 8px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255,255,255,0.10);
+        }
+
+        .meter-fill {
+            display: block;
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #ffe082 0%, #ffb300 100%);
+        }
+
+        .speed-ai { width: 70%; }
+        .stability-ai { width: 76%; }
+        .speed-turtle { width: 52%; }
+        .stability-turtle { width: 92%; }
+        .speed-rabbit { width: 96%; }
+        .stability-rabbit { width: 55%; }
+
+        .team-feature-row {
+            display: flex;
+            gap: 8px;
+            margin-top: auto;
+            padding-top: 2px;
+        }
+
+        .team-feature-row span {
+            font-size: 12px;
+            color: #ffe082;
+            border-radius: 999px;
+            padding: 4px 10px;
+            background: rgba(255, 179, 0, 0.10);
+            border: 1px solid rgba(255, 224, 130, 0.26);
+        }
+
+        .premium-home .selected-boat-tip {
+            display: none !important;
+        }
+
+        .premium-actions {
+            margin-top: 22px;
+            gap: 16px;
+        }
+
+        .home-main-btn {
+            min-width: 320px;
+            font-size: 28px;
+            padding: 14px 36px;
+            border-radius: 999px;
+            box-shadow: 0 14px 32px rgba(76, 175, 80, 0.28);
+        }
+
+        .premium-actions .btn-secondary {
+            min-width: 170px;
+            font-size: 18px;
+            padding: 12px 26px;
+            border-radius: 999px;
+        }
+
+    
+        /* ==================== 少儿游戏风加强版 ==================== */
+        .premium-home {
+            width: 824px;
+            padding: 26px 28px 26px;
+            background:
+                radial-gradient(circle at 50% -10%, rgba(255, 214, 102, 0.16), transparent 26%),
+                radial-gradient(circle at 10% 20%, rgba(92, 219, 149, 0.10), transparent 24%),
+                radial-gradient(circle at 88% 14%, rgba(88, 201, 255, 0.08), transparent 20%),
+                linear-gradient(135deg, rgba(5, 57, 53, 0.93) 0%, rgba(2, 39, 43, 0.96) 100%);
+        }
+
+        .premium-home .home-lake-hero {
+            height: 214px;
+            margin-bottom: 24px;
+            border-radius: 30px;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 50% 0%, rgba(255,255,255,0.24), transparent 34%),
+                linear-gradient(180deg, #b9ebff 0%, #69d4f2 32%, #29c1de 68%, #0ea2c0 100%);
+            box-shadow:
+                inset 0 -18px 28px rgba(0, 92, 120, 0.12),
+                0 16px 34px rgba(0, 0, 0, 0.16);
+        }
+
+        .premium-home .home-lake-hero::before {
+            opacity: 0.55;
+            animation-duration: 4.6s;
+        }
+
+        .premium-home .home-lake-hero::after {
+            opacity: 0.65;
+        }
+
+        .premium-home .hero-badge {
+            background: rgba(255,255,255,0.28);
+            border-color: rgba(255,255,255,0.38);
+            color: #fffdf2;
+            box-shadow: 0 3px 10px rgba(255,255,255,0.10);
+        }
+
+        .premium-home .hero-main-text {
+            top: 42px;
+        }
+
+        .premium-home .hero-main-text .game-title {
+            font-size: 70px;
+            margin-bottom: 8px;
+            letter-spacing: 3px;
+            color: #ffb300;
+            text-shadow:
+                0 4px 0 rgba(181, 93, 0, 0.92),
+                0 10px 18px rgba(0,0,0,0.18);
+            filter: none;
+        }
+
+        .premium-home .hero-main-text .game-subtitle {
+            font-size: 21px;
+            letter-spacing: 4px;
+            color: #fff7c5;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.14);
+        }
+
+        .hero-water-shine {
+            height: 52px;
+            opacity: 0.92;
+        }
+
+        .hero-silhouette {
+            background: rgba(9, 106, 130, 0.22);
+            bottom: 30px;
+        }
+
+        .hero-silhouette::before {
+            background: rgba(9, 106, 130, 0.18);
+        }
+
+        .hero-boat-left { left: 110px; opacity: 0.52; }
+        .hero-boat-right { right: 112px; opacity: 0.42; }
+
+        .premium-selection .selection-title {
+            font-size: 17px;
+            margin-bottom: 14px;
+            color: #ffd54f;
+            letter-spacing: 1px;
+        }
+
+        .premium-selection .team-cards-container {
+            gap: 16px;
+        }
+
+        .premium-selection .team-card {
+            width: 246px;
+            min-height: 178px;
+            padding: 16px 15px 15px;
+            border-radius: 24px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.11) 0%, rgba(255,255,255,0.04) 100%);
+            border: 2px solid rgba(255,255,255,0.14);
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.08),
+                0 8px 18px rgba(0,0,0,0.10);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .premium-selection .team-card:hover {
+            transform: translateY(-5px) scale(1.015);
+            border-color: rgba(255, 221, 87, 0.46);
+            box-shadow:
+                0 12px 24px rgba(0,0,0,0.14),
+                0 0 0 1px rgba(255, 235, 59, 0.08);
+        }
+
+        .premium-selection .team-card.selected {
+            background: linear-gradient(180deg, rgba(255, 217, 102, 0.18) 0%, rgba(255, 184, 77, 0.07) 100%);
+            border-color: #ffca28;
+            box-shadow:
+                0 0 0 2px rgba(255, 202, 40, 0.14),
+                0 0 30px rgba(255, 202, 40, 0.18),
+                inset 0 1px 0 rgba(255,255,255,0.12);
+        }
+
+        .premium-selection .team-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 18px;
+            font-size: 30px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.10) 100%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+        }
+
+        .premium-selection .team-name {
+            font-size: 18px;
+            color: #ffffff;
+        }
+
+        .team-role-tag {
+            font-size: 11px;
+            color: #fff6cf;
+            background: rgba(255, 202, 40, 0.13);
+            border-color: rgba(255, 235, 59, 0.16);
+        }
+
+        .meter-wrap {
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .meter-label {
+            font-size: 11px;
+            color: rgba(255,255,255,0.78);
+        }
+
+        .meter-bar {
+            height: 10px;
+            background: rgba(255,255,255,0.12);
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.10);
+        }
+
+        .meter-fill {
+            box-shadow: 0 0 8px rgba(255, 224, 130, 0.20);
+        }
+
+        .speed-ai { background: linear-gradient(90deg, #80deea 0%, #29b6f6 100%); }
+        .stability-ai { background: linear-gradient(90deg, #81c784 0%, #43a047 100%); }
+        .speed-turtle { background: linear-gradient(90deg, #ffd54f 0%, #ffb300 100%); }
+        .stability-turtle { background: linear-gradient(90deg, #66bb6a 0%, #2e7d32 100%); }
+        .speed-rabbit { background: linear-gradient(90deg, #ffcc80 0%, #ff9800 100%); }
+        .stability-rabbit { background: linear-gradient(90deg, #ef9a9a 0%, #ef5350 100%); }
+
+        .team-feature-row span {
+            font-size: 12px;
+            font-weight: 700;
+            color: #fff6cf;
+            background: rgba(255, 202, 40, 0.12);
+            border: 1px solid rgba(255, 235, 59, 0.24);
+            padding: 5px 11px;
+        }
+
+        .premium-actions {
+            margin-top: 22px;
+            gap: 16px;
+        }
+
+        .home-main-btn {
+            min-width: 316px;
+            font-size: 28px;
+            padding: 14px 34px;
+            background: linear-gradient(180deg, #6fd66f 0%, #43a047 100%);
+            border: 2px solid rgba(214, 255, 214, 0.55);
+            color: #ffffff;
+            text-shadow: 0 2px 0 rgba(30, 90, 30, 0.45);
+            box-shadow: 0 12px 28px rgba(76, 175, 80, 0.28);
+        }
+
+        .home-main-btn:hover {
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 16px 30px rgba(76, 175, 80, 0.34);
+        }
+
+        .premium-actions .btn-secondary {
+            min-width: 168px;
+            font-size: 19px;
+            padding: 12px 24px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 100%);
+            border: 2px solid rgba(255,255,255,0.22);
+            color: #ffffff;
+        }
+
+        .premium-actions .btn-secondary:hover {
+            background: linear-gradient(180deg, rgba(255, 224, 130, 0.22) 0%, rgba(255, 193, 7, 0.10) 100%);
+        }
+
+        .help-panel {
+            background:
+                radial-gradient(circle at 50% -10%, rgba(255, 224, 130, 0.12), transparent 30%),
+                linear-gradient(135deg, rgba(11, 50, 47, 0.94) 0%, rgba(8, 36, 39, 0.96) 100%);
+            border-radius: 26px;
+        }
+
+        .help-title {
+            color: #ffd54f;
+            text-shadow: 0 3px 0 rgba(120, 75, 0, 0.45);
+        }
+
+        .help-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 16px;
+        }
+
+    
+        /* ==================== 少儿游戏风防遮挡优化版 ==================== */
+        .premium-home {
+            padding: 20px 24px 18px !important;
+            max-height: 548px !important;
+            overflow: hidden !important;
+        }
+
+        .premium-home .home-lake-hero {
+            height: 180px !important;
+            margin-bottom: 18px !important;
+            border-radius: 26px !important;
+        }
+
+        .premium-home .hero-badge-row {
+            top: 12px !important;
+            left: 18px !important;
+            right: 18px !important;
+        }
+
+        .premium-home .hero-badge {
+            font-size: 11px !important;
+            padding: 6px 12px !important;
+        }
+
+        .premium-home .hero-main-text {
+            top: 34px !important;
+        }
+
+        .premium-home .hero-main-text .game-title {
+            font-size: 60px !important;
+            margin-bottom: 4px !important;
+        }
+
+        .premium-home .hero-main-text .game-subtitle {
+            font-size: 18px !important;
+            letter-spacing: 3px !important;
+        }
+
+        .hero-silhouette {
+            bottom: 22px !important;
+            transform: scale(0.88);
+        }
+
+        .hero-water-shine {
+            height: 40px !important;
+        }
+
+        .premium-selection .selection-title {
+            font-size: 16px !important;
+            margin-bottom: 12px !important;
+        }
+
+        .premium-selection .team-cards-container {
+            gap: 14px !important;
+        }
+
+        .premium-selection .team-card {
+            width: 236px !important;
+            min-height: 145px !important;
+            padding: 13px 13px 12px !important;
+            border-radius: 22px !important;
+        }
+
+        .team-top {
+            gap: 10px !important;
+            margin-bottom: 10px !important;
+        }
+
+        .premium-selection .team-icon {
+            width: 54px !important;
+            height: 54px !important;
+            font-size: 28px !important;
+            border-radius: 16px !important;
+        }
+
+        .premium-selection .team-name {
+            font-size: 15px !important;
+            margin-bottom: 4px !important;
+        }
+
+        .team-role-tag {
+            font-size: 10px !important;
+            padding: 3px 8px !important;
+        }
+
+        .meter-wrap {
+            grid-template-columns: 28px 1fr !important;
+            gap: 8px !important;
+            margin-bottom: 8px !important;
+        }
+
+        .meter-label {
+            font-size: 10px !important;
+        }
+
+        .meter-bar {
+            height: 9px !important;
+        }
+
+        .team-feature-row {
+            gap: 7px !important;
+            padding-top: 0 !important;
+        }
+
+        .team-feature-row span {
+            font-size: 11px !important;
+            padding: 4px 10px !important;
+        }
+
+        .premium-actions {
+            margin-top: 14px !important;
+            gap: 12px !important;
+        }
+
+        .home-main-btn {
+            min-width: 292px !important;
+            font-size: 22px !important;
+            padding: 10px 28px !important;
+        }
+
+        .premium-actions .btn-secondary {
+            min-width: 150px !important;
+            font-size: 17px !important;
+            padding: 10px 22px !important;
+        }
+
+        @media (max-height: 650px) {
+            .premium-home {
+                transform: scale(0.97);
+                transform-origin: top center;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-wrapper">
+        <!-- 游戏 HUD (顶部常驻) -->
+        <div id="hud-container">
+            <div class="hud-section">
+                <!-- 分数 -->
+                <div class="hud-item">
+                    <span class="hud-label">得分</span>
+                    <span id="hud-score" class="hud-value">0</span>
+                </div>
+                <!-- 材料数量 -->
+                <div class="hud-item">
+                    <span class="hud-label">粽子材料</span>
+                    <span id="hud-materials" class="hud-value accent-green">0 / 8</span>
+                </div>
+            </div>
+
+            <div class="hud-section">
+                <!-- 倒计时 -->
+                <div class="hud-item">
+                    <span class="hud-label">剩余时间</span>
+                    <span id="hud-time" class="hud-value accent-red">90.0s</span>
+                </div>
+                <!-- 实时名次 -->
+                <div class="hud-item" style="border: none; background: transparent;">
+                    <span id="rank-badge">第 3 名</span>
+                </div>
+            </div>
+
+            <div class="hud-section">
+                <!-- 冲刺能量 -->
+                <div class="hud-item">
+                    <span class="hud-label">鼓点冲刺</span>
+                    <div class="progress-container">
+                        <div class="progress-bar-bg">
+                            <div id="energy-fill" class="progress-bar-fill" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 龙舟稳定值 -->
+                <div class="hud-item">
+                    <span class="hud-label">龙舟稳定度</span>
+                    <div class="progress-container">
+                        <div class="progress-bar-bg">
+                            <div id="stability-fill" class="progress-bar-fill" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- 游戏过程控制按钮 -->
+        <div id="game-control-panel">
+            <div class="game-control-row">
+                <button id="btn-pause-game" class="game-control-btn">暂停</button>
+                <button id="btn-rest-player" class="game-control-btn">休息一会</button>
+            </div>
+            <div class="game-control-row">
+                <button id="btn-speed-2" class="game-control-btn">加速 2倍</button>
+                <button id="btn-speed-10" class="game-control-btn">加速 10倍</button>
+            </div>
+            <div id="mode-status">模式：正常</div>
+            <button id="btn-end-rest" class="game-control-btn">返回比赛</button>
+        </div>
+
+        <!-- Canvas 渲染容器 -->
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+
+        <!-- 游戏开始遮罩层：优化美化版首页 -->
+        <div id="start-overlay" class="overlay">
+            <div class="panel start-panel simple-home premium-home">
+                <div class="lake-hero home-lake-hero">
+                    <div class="hero-badge-row">
+                        <div class="hero-badge">🎏 端午竞速</div>
+                        <div class="hero-badge">🏁 湖面开赛</div>
+                    </div>
+
+                    <div class="hero-main-text">
+                        <h1 class="game-title">龙舟追粽赛</h1>
+                        <p class="game-subtitle">选船 · 冲刺 · 夺魁</p>
+                    </div>
+
+                    <div class="hero-silhouette hero-boat-left"></div>
+                    <div class="hero-silhouette hero-boat-right"></div>
+                    <div class="hero-water-shine"></div>
+                </div>
+
+                <div class="team-selection-section premium-selection">
+                    <h3 class="selection-title">选择你的龙舟</h3>
+                    <div class="team-cards-container">
+                        <div class="team-card selected" data-team="red">
+                            <div class="team-top">
+                                <div class="team-icon">🤖🛶</div>
+                                <div class="team-heading">
+                                    <div class="team-name">AI 龙舟</div>
+                                    <div class="team-role-tag">平衡型选手</div>
+                                </div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">速度</div>
+                                <div class="meter-bar"><span class="meter-fill speed-ai"></span></div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">稳定</div>
+                                <div class="meter-bar"><span class="meter-fill stability-ai"></span></div>
+                            </div>
+                            <div class="team-feature-row">
+                                <span>均衡</span><span>稳定</span>
+                            </div>
+                        </div>
+
+                        <div class="team-card" data-team="green">
+                            <div class="team-top">
+                                <div class="team-icon">🐢🛶</div>
+                                <div class="team-heading">
+                                    <div class="team-name">乌龟龙舟</div>
+                                    <div class="team-role-tag">防守型选手</div>
+                                </div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">速度</div>
+                                <div class="meter-bar"><span class="meter-fill speed-turtle"></span></div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">稳定</div>
+                                <div class="meter-bar"><span class="meter-fill stability-turtle"></span></div>
+                            </div>
+                            <div class="team-feature-row">
+                                <span>最稳</span><span>抗撞</span>
+                            </div>
+                        </div>
+
+                        <div class="team-card" data-team="white">
+                            <div class="team-top">
+                                <div class="team-icon">🐇🛶</div>
+                                <div class="team-heading">
+                                    <div class="team-name">兔子龙舟</div>
+                                    <div class="team-role-tag">爆发型选手</div>
+                                </div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">速度</div>
+                                <div class="meter-bar"><span class="meter-fill speed-rabbit"></span></div>
+                            </div>
+                            <div class="meter-wrap">
+                                <div class="meter-label">稳定</div>
+                                <div class="meter-bar"><span class="meter-fill stability-rabbit"></span></div>
+                            </div>
+                            <div class="team-feature-row">
+                                <span>最快</span><span>爆发</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="home-actions premium-actions">
+                    <button id="btn-start" class="btn-action home-main-btn">开始比赛</button>
+                    <button id="btn-show-help" class="btn-action btn-secondary">玩法说明</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 玩法说明遮罩层：把文字说明放到这里 -->
+        <div id="help-overlay" class="overlay hidden">
+            <div class="panel help-panel">
+                <h2 class="help-title">玩法说明</h2>
+                <div class="help-grid">
+                    <div class="help-card">
+                        <h3>🎯 目标</h3>
+                        <p>90 秒内冲过终点，并收集至少 8 个粽子材料。</p>
+                    </div>
+                    <div class="help-card">
+                        <h3>🎮 操作</h3>
+                        <p>WASD / 方向键移动，空格键冲刺。</p>
+                    </div>
+                    <div class="help-card">
+                        <h3>🍙 收集</h3>
+                        <p>粽叶、糯米、红枣可加分；大鼓补能量，艾草开护盾。</p>
+                    </div>
+                    <div class="help-card">
+                        <h3>⚠️ 注意</h3>
+                        <p>浪花、水草、礁石会减速或降低稳定度。</p>
+                    </div>
+                </div>
+
+                <div class="help-boat-tips">
+                    <span>🐇 兔子最快</span>
+                    <span>🤖 AI 均衡</span>
+                    <span>🐢 乌龟最稳</span>
+                </div>
+
+                <div class="home-actions">
+                    <button id="btn-help-start" class="btn-action">看懂了，开始比赛</button>
+                    <button id="btn-close-help" class="btn-action btn-secondary">返回首页</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏结算遮罩层 -->
+        <div id="end-overlay" class="overlay hidden">
+            <div class="panel">
+                <div id="result-title" class="result-title win">端午夺魁！</div>
+                
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div>比赛名次</div>
+                        <div id="stat-rank" class="num">第 1 名</div>
+                    </div>
+                    <div class="stat-box">
+                        <div>收集材料</div>
+                        <div id="stat-materials" class="num">0 个</div>
+                    </div>
+                    <div class="stat-box">
+                        <div>最终得分</div>
+                        <div id="stat-score" class="num">0</div>
+                    </div>
+                </div>
+
+                <div id="blessing-text" class="blessing-text">祝你端午安康，百舸争流，独占鳌头！</div>
+
+                <button id="btn-restart" class="btn-action">返回首页再来一局</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 5. 游戏全局配置变量 (可随意修改) ====================
+        const CONFIG = {
+            raceDistance: 9500,        // 赛道总长度 (终点线位置)
+            timeLimit: 90.0,           // 比赛时间限制 (秒)
+            requiredMaterials: 8,      // 完美通关所需最少粽子材料数量
+            
+            // 玩家属性
+            playerBaseSpeed: 4.5,      // 玩家基础划行速度
+            playerMaxSpeed: 6.2,       // 玩家普通最高速度（AI 龙舟，初始速度：兔子 > AI > 乌龟）
+            playerDashSpeed: 10.0,     // 空格冲刺速度
+            playerAccel: 0.15,         // 加速度
+            playerDecel: 0.05,         // 自然水阻力减速度
+            
+            // 兔龙舟 AI 属性
+            rabbitBaseSpeed: 5.6,      // 兔龙舟基础速度
+            rabbitDashSpeed: 7.2,      // 兔龙舟冲刺速度
+            rabbitFatigueInterval: 12000, // 兔子疲劳触发间隔 (毫秒)
+            rabbitFatigueDuration: 3000,  // 兔子每次疲劳持续时间 (毫秒)
+            rabbitMinSpeed: 2.2,       // 兔子疲劳时的龟速
+            aiBoatBaseSpeed: 5.2,     // AI 龙舟基础速度
+            
+            // 龟龙舟 AI 属性
+            turtleBaseSpeed: 4.3,      // 龟龙舟匀速，极稳定
+            
+            // 碰撞减速系数
+            slowdownWeed: 0.4,         // 撞水草后速度衰减系数 (剩 40%)
+            slowdownWave: 0.6,         // 撞大浪花后速度衰减系数
+            slowdownRock: 0.2          // 撞礁石后速度衰减系数，且大幅降低稳定度
+        };
+
+        // ==================== 6. 游戏核心运行变量与状态 ====================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let gameState = 'start'; // 'start', 'playing', 'gameover', 'victory'
+        let selectedTeam = 'red'; // 默认玩家选择 AI 龙舟
+        const TEAM_LABELS = {
+            red: 'AI 龙舟',
+            green: '乌龟龙舟',
+            white: '兔子龙舟'
+        };
+
+        function updateSelectedBoatUI() {
+            const selectedLabel = TEAM_LABELS[selectedTeam] || 'AI 龙舟';
+            const tipEl = document.getElementById('selected-boat-tip');
+            const startBtn = document.getElementById('btn-start');
+            if (tipEl) tipEl.innerText = `当前选择：${selectedLabel}`;
+            if (startBtn) startBtn.innerText = `驾驶 ${selectedLabel}，开始比赛`;
+        }
+
+        let gameTime = CONFIG.timeLimit;
+        let lastTime = 0;
+        let score = 0;
+        let materialsCount = 0;
+        let comboCount = 0;
+        let comboTimer = 0; // 连击有效时间计时器
+
+        // 输入控制
+        const keys = {};
+
+        // 实体容器
+        let player;
+        let aiRabbit;
+        let aiTurtle;
+        let items = [];
+        let obstacles = [];
+        let particles = [];
+        let floatingTexts = [];
+
+        // 终点状态
+        let finishedBoats = []; // 记录冲线顺序：{ name: string, time: number }
+
+        // 游戏过程控制状态
+        let isGamePaused = false;       // 全局暂停：三只龙舟都不动，倒计时也暂停
+        let isPlayerResting = false;    // 休息一会：玩家龙舟不动，其他两只正常前进
+        let playerSpeedMultiplier = 1;  // 玩家龙舟专属速度倍率：1 / 2 / 10
+
+
+        // ==================== 7. 输入监听 ====================
+        window.addEventListener('keydown', e => {
+            const key = e.key.toLowerCase();
+            keys[key] = true;
+            if (e.key === ' ' || e.code === 'Space') {
+                e.preventDefault(); // 阻止浏览器空格翻页
+                keys['space'] = true;
+            }
+        });
+
+        window.addEventListener('keyup', e => {
+            const key = e.key.toLowerCase();
+            keys[key] = false;
+            if (e.key === ' ' || e.code === 'Space') {
+                keys['space'] = false;
+            }
+        });
+
+        // ==================== 8. 辅助类与渲染方法 ====================
+
+        // 粒子系统类 (水花、冲刺速度线、艾草金光、烟花)
+        class Particle {
+            constructor(x, y, vx, vy, color, size, life, type = 'water') {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.color = color;
+                this.size = size;
+                this.life = life;      // 剩余生命帧数
+                this.maxLife = life;
+                this.type = type;      // 'water', 'dash', 'shield', 'firework', 'star'
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+                
+                if (this.type === 'firework') {
+                    this.vy += 0.08; // 烟花微重力下坠
+                }
+            }
+
+            draw(ctx, viewportX) {
+                ctx.save();
+                let alpha = this.life / this.maxLife;
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                
+                if (this.type === 'dash') {
+                    // 冲刺线条
+                    ctx.strokeStyle = this.color;
+                    ctx.lineWidth = this.size;
+                    ctx.beginPath();
+                    ctx.moveTo(this.x - viewportX, this.y);
+                    ctx.lineTo(this.x - viewportX - 25, this.y);
+                    ctx.stroke();
+                } else {
+                    // 圆形粒子
+                    ctx.beginPath();
+                    ctx.arc(this.x - viewportX, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        // 浮动文字特效类
+        class FloatingText {
+            constructor(x, y, text, color, fontSize = 20, duration = 60) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.color = color;
+                this.fontSize = fontSize;
+                this.life = duration;
+                this.maxLife = duration;
+            }
+
+            update() {
+                this.y -= 0.8; // 慢慢向上飘
+                this.life--;
+            }
+
+            draw(ctx, viewportX) {
+                ctx.save();
+                ctx.globalAlpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 3;
+                ctx.font = `italic bold ${this.fontSize}px 'Microsoft YaHei', sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.strokeText(this.text, this.x - viewportX, this.y);
+                ctx.fillText(this.text, this.x - viewportX, this.y);
+                ctx.restore();
+            }
+        }
+
+        // ==================== 9. 龙舟实体类 ====================
+        
+        // 基础龙舟类
+        class Boat {
+            constructor(x, y, type, name, isPlayer = false) {
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.width = 90;
+                this.height = 30;
+                this.type = type; // 'red', 'white', 'green'
+                this.name = name;
+                this.isPlayer = isPlayer;
+
+                // 根据战队类型设定初始底色
+                if (type === 'red') this.color = '#1e88e5';      // AI 蓝
+                else if (type === 'white') this.color = '#eceff1'; // 兔兔白
+                else this.color = '#2e7d32';                      // 乌龟绿
+
+                this.targetY = y;          // 目标车道高度 (AI使用)
+                this.oarAngle = 0;         // 划桨摆动角度
+                this.oarTimer = 0;
+                this.isFinished = false;   // 是否冲过终点线
+            }
+
+            updateOarAnimation(speed) {
+                if (speed > 0.1) {
+                    this.oarTimer += speed * 0.15;
+                    this.oarAngle = Math.sin(this.oarTimer) * 0.5; // 划桨幅度
+                } else {
+                    this.oarAngle = 0;
+                }
+            }
+
+            // 绘制龙舟主体
+            drawBoat(ctx, viewportX) {
+                const drawX = this.x - viewportX;
+                const drawY = this.y;
+
+                ctx.save();
+                ctx.translate(drawX, drawY);
+
+                // 1. 绘制划桨 (两边对称)
+                ctx.fillStyle = '#8d6e63'; // 桨木色
+                const numOars = 4;
+                for (let i = 0; i < numOars; i++) {
+                    const oarX = -this.width / 2 + 15 + i * 18;
+                    // 上方桨
+                    ctx.save();
+                    ctx.translate(oarX, -10);
+                    ctx.rotate(-this.oarAngle - 0.5);
+                    ctx.fillRect(-2, -18, 4, 18);
+                    ctx.fillStyle = '#b0bec5';
+                    ctx.fillRect(-4, -22, 8, 5); // 桨叶
+                    ctx.restore();
+
+                    // 下方桨
+                    ctx.save();
+                    ctx.translate(oarX, 10);
+                    ctx.rotate(this.oarAngle + 0.5);
+                    ctx.fillStyle = '#8d6e63';
+                    ctx.fillRect(-2, 0, 4, 18);
+                    ctx.fillStyle = '#b0bec5';
+                    ctx.fillRect(-4, 17, 8, 5); // 桨叶
+                    ctx.restore();
+                }
+
+                // 2. 绘制船身 (流线梭子型)
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.moveTo(-this.width / 2, 0); // 船尾
+                ctx.quadraticCurveTo(-this.width / 4, -14, this.width / 2 - 10, -12); // 上边缘
+                ctx.lineTo(this.width / 2, 0); // 船头交汇
+                ctx.lineTo(this.width / 2 - 10, 12); // 下边缘
+                ctx.quadraticCurveTo(-this.width / 4, 14, -this.width / 2, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#3e2723';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // 3. 船身上的祥云/龙鳞纹理
+                ctx.strokeStyle = this.type === 'red' ? 'rgba(128, 222, 234, 0.75)' : 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 1.5;
+                for (let i = -this.width / 2 + 15; i < this.width / 2 - 15; i += 12) {
+                    ctx.beginPath();
+                    ctx.arc(i, -2, 4, Math.PI, 0, false);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.arc(i + 6, 2, 4, 0, Math.PI, false);
+                    ctx.stroke();
+                }
+
+                // 4. 船尾造型 (龙尾哨 或 兔毛尾 或 龟尾)
+                ctx.fillStyle = this.type === 'red' ? '#00e5ff' : (this.type === 'white' ? '#ffffff' : '#1b5e20');
+                ctx.beginPath();
+                if (this.type === 'red') {
+                    ctx.moveTo(-this.width / 2, 0);
+                    ctx.quadraticCurveTo(-this.width / 2 - 15, -15, -this.width / 2 - 10, -22);
+                    ctx.quadraticCurveTo(-this.width / 2 - 5, -12, -this.width / 2, 0);
+                } else if (this.type === 'white') {
+                    // 兔子圆球尾
+                    ctx.arc(-this.width / 2 - 4, 0, 7, 0, Math.PI * 2);
+                } else {
+                    // 乌龟扁尾巴
+                    ctx.moveTo(-this.width / 2, 0);
+                    ctx.lineTo(-this.width / 2 - 12, -4);
+                    ctx.lineTo(-this.width / 2 - 12, 4);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 5. 船头精美造型 (AI 船首 / 兔首 / 龟首)
+                if (this.type === 'red') {
+                    this.drawDragonHead(ctx);
+                } else if (this.type === 'white') {
+                    this.drawRabbitHead(ctx);
+                } else {
+                    this.drawTurtleHead(ctx);
+                }
+
+                // 5.5 船身上的角色形象（更逼真）
+                this.drawBoatMascot(ctx);
+
+                // 6. 船鼓与敲鼓人 (若是红队，鼓大一点；若是其他队，也画个简易鼓)
+                ctx.fillStyle = '#d32f2f'; // 鼓身
+                ctx.fillRect(5, -6, 12, 12);
+                ctx.strokeStyle = '#fff';
+                ctx.strokeRect(5, -6, 12, 12);
+                ctx.fillStyle = '#fff'; // 鼓面
+                ctx.beginPath();
+                ctx.arc(11, 0, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 7. 龟背甲装饰 (如果是绿龟队)
+                if (this.type === 'green') {
+                    ctx.fillStyle = '#1b5e20';
+                    ctx.beginPath();
+                    ctx.arc(-15, 0, 9, 0, Math.PI, true);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#81c784';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    // 龟甲线
+                    ctx.beginPath();
+                    ctx.moveTo(-15, -9); ctx.lineTo(-15, 0);
+                    ctx.moveTo(-20, -6); ctx.lineTo(-10, -6);
+                    ctx.stroke();
+                }
+
+                // 8. 玩家专属标识
+                if (this.isPlayer) {
+                    this.drawPlayerBadge(ctx);
+                }
+
+                ctx.restore();
+            }
+
+
+
+            drawPlayerBadge(ctx) {
+                ctx.save();
+
+                // 小三角箭头指向玩家龙舟
+                ctx.fillStyle = '#ffca28';
+                ctx.beginPath();
+                ctx.moveTo(0, -50);
+                ctx.lineTo(-8, -62);
+                ctx.lineTo(8, -62);
+                ctx.closePath();
+                ctx.fill();
+
+                // Player 标识底板
+                ctx.fillStyle = 'rgba(8, 40, 48, 0.92)';
+                ctx.strokeStyle = '#ffe082';
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.roundRect(-34, -86, 68, 22, 11);
+                ctx.fill();
+                ctx.stroke();
+
+                // 人物头像
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-20, -75, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#2f3b4a';
+                ctx.beginPath();
+                ctx.arc(-20, -77, 2.1, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(-20, -72.5, 3.1, Math.PI, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                // Player 文字
+                ctx.fillStyle = '#ffe082';
+                ctx.font = 'bold 12px "Microsoft YaHei", sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText('Player', -10, -70);
+
+                ctx.restore();
+            }
+
+            drawBoatMascot(ctx) {
+                if (this.type === 'red') this.drawAIMascot(ctx);
+                else if (this.type === 'white') this.drawRabbitMascot(ctx);
+                else this.drawTurtleMascot(ctx);
+            }
+
+            drawAIMascot(ctx) {
+                ctx.save();
+                ctx.translate(-8, -6);
+
+                const bodyGrad = ctx.createLinearGradient(-8, -10, 8, 12);
+                bodyGrad.addColorStop(0, '#f8fbff');
+                bodyGrad.addColorStop(0.55, '#cfe3f2');
+                bodyGrad.addColorStop(1, '#90a4b8');
+                ctx.fillStyle = bodyGrad;
+                ctx.strokeStyle = '#4f6575';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.roundRect(-8, -10, 16, 18, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#15364d';
+                ctx.beginPath();
+                ctx.roundRect(-5.5, -5.5, 11, 6.5, 3);
+                ctx.fill();
+
+                ctx.fillStyle = '#52e5ff';
+                ctx.beginPath();
+                ctx.arc(-2.4, -2.2, 1.5, 0, Math.PI * 2);
+                ctx.arc(2.4, -2.2, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#52768b';
+                ctx.lineWidth = 1.1;
+                ctx.beginPath();
+                ctx.moveTo(-3.6, 3.2);
+                ctx.lineTo(3.6, 3.2);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#90a4b8';
+                ctx.lineWidth = 1.1;
+                ctx.beginPath();
+                ctx.moveTo(-3.5, -10);
+                ctx.lineTo(-5.2, -14);
+                ctx.moveTo(3.5, -10);
+                ctx.lineTo(5.2, -14);
+                ctx.stroke();
+
+                ctx.fillStyle = '#ff6d6d';
+                ctx.beginPath();
+                ctx.arc(-5.2, -14, 1.7, 0, Math.PI * 2);
+                ctx.arc(5.2, -14, 1.7, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            drawRabbitMascot(ctx) {
+                ctx.save();
+                ctx.translate(-7, -5);
+
+                ctx.fillStyle = '#fffdfc';
+                ctx.strokeStyle = '#d9d9d9';
+                ctx.lineWidth = 1.1;
+                ctx.beginPath();
+                ctx.ellipse(-1, 2, 8, 6, -0.08, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.ellipse(8, -1, 5.3, 4.8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(7, -11, 2.9, 8, -0.18, 0, Math.PI * 2);
+                ctx.ellipse(11, -10, 2.8, 7.4, 0.18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffb3c7';
+                ctx.beginPath();
+                ctx.ellipse(7, -11, 1.3, 5.4, -0.18, 0, Math.PI * 2);
+                ctx.ellipse(11, -10, 1.2, 5.0, 0.18, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#313131';
+                ctx.beginPath();
+                ctx.arc(9.8, -2.2, 0.9, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#ff8fa3';
+                ctx.beginPath();
+                ctx.arc(12.5, 0.1, 0.9, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            drawTurtleMascot(ctx) {
+                ctx.save();
+                ctx.translate(-8, -4);
+
+                ctx.fillStyle = '#5d8f42';
+                ctx.strokeStyle = '#335c28';
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                ctx.ellipse(-1, 0, 8.5, 6.8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.strokeStyle = '#a7d27f';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-7, 0);
+                ctx.lineTo(5, 0);
+                ctx.moveTo(-1, -5.5);
+                ctx.lineTo(-1, 5.5);
+                ctx.moveTo(-5, -3.8);
+                ctx.lineTo(3, 3.8);
+                ctx.moveTo(3, -3.8);
+                ctx.lineTo(-5, 3.8);
+                ctx.stroke();
+
+                ctx.fillStyle = '#7ebf63';
+                ctx.strokeStyle = '#335c28';
+                ctx.beginPath();
+                ctx.ellipse(9.5, -0.5, 4.3, 3.9, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(10.6, -1.4, 1.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#1a1a1a';
+                ctx.beginPath();
+                ctx.arc(10.9, -1.4, 0.55, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            drawDragonHead(ctx) {
+                const headX = this.width / 2;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(headX, -2, 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffb300';
+                ctx.beginPath();
+                ctx.moveTo(headX + 5, 2);
+                ctx.lineTo(headX + 16, 5);
+                ctx.lineTo(headX + 8, -4);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#ffb300';
+                ctx.beginPath();
+                ctx.moveTo(headX - 4, -10);
+                ctx.lineTo(headX - 8, -22);
+                ctx.lineTo(headX, -12);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(headX + 6, 2);
+                ctx.quadraticCurveTo(headX + 15, 8, headX + 10, 14);
+                ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(headX + 2, -6, 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(headX + 3, -6, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            drawRabbitHead(ctx) {
+                const headX = this.width / 2;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(headX, -2, 11, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 兔耳朵
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#e0e0e0';
+                ctx.lineWidth = 1.5;
+                // 左耳
+                ctx.beginPath();
+                ctx.ellipse(headX - 2, -15, 5, 12, -Math.PI / 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#ff80ab';
+                ctx.beginPath();
+                ctx.ellipse(headX - 2, -15, 2.5, 8, -Math.PI / 6, 0, Math.PI * 2);
+                ctx.fill();
+                // 右耳
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(headX + 5, -13, 5, 12, -Math.PI / 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#ff80ab';
+                ctx.beginPath();
+                ctx.ellipse(headX + 5, -13, 2.5, 8, -Math.PI / 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 亮晶晶的小眼
+                ctx.fillStyle = '#ff5252'; // 兔兔红眼睛
+                ctx.beginPath();
+                ctx.arc(headX + 2, -4, 3, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(headX + 3, -5, 1, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 兔嘴胡须
+                ctx.strokeStyle = '#bbb';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(headX + 8, 0); ctx.lineTo(headX + 13, -1);
+                ctx.moveTo(headX + 8, 2); ctx.lineTo(headX + 13, 3);
+                ctx.stroke();
+            }
+
+            drawTurtleHead(ctx) {
+                const headX = this.width / 2;
+                ctx.fillStyle = '#388e3c'; // 深一点的绿色
+                // 伸出来的乌龟脖子
+                ctx.fillRect(headX - 5, -6, 12, 10);
+                
+                // 乌龟头部
+                ctx.beginPath();
+                ctx.arc(headX + 6, -3, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#1b5e20';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // 戴个红色的端午小头巾 (超可爱点缀)
+                ctx.fillStyle = '#d32f2f';
+                ctx.beginPath();
+                ctx.arc(headX + 6, -8, 6, Math.PI, 0);
+                ctx.closePath();
+                ctx.fill();
+                // 头巾结
+                ctx.beginPath();
+                ctx.moveTo(headX, -8);
+                ctx.lineTo(headX - 4, -10);
+                ctx.lineTo(headX - 2, -6);
+                ctx.closePath();
+                ctx.fill();
+
+                // 乌龟萌萌的眼睛
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(headX + 8, -4, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(headX + 9, -4, 1.8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // ==================== 玩家龙舟控制类 ====================
+        class PlayerBoat extends Boat {
+            constructor(x, y, type) {
+                let name;
+                if (type === 'red') name = '玩家龙舟 (AI)';
+                else if (type === 'white') name = '玩家龙舟 (兔子)';
+                else name = '玩家龙舟 (乌龟)';
+
+                super(x, y, type, name, true);
+
+                this.dashEnergy = 100;     // 冲刺能量值 (0 - 100)
+                this.dashActive = false;   // 是否处于冲刺态
+                this.dashTimer = 0;        // 冲刺持续帧数
+                this.shieldTime = 0;       // 艾草护盾剩余帧数 (60帧 = 1秒)
+
+                // 队伍特有属性设置
+                if (type === 'red') {
+                    this.stability = 100;
+                    this.maxStability = 100;
+                } else if (type === 'white') {
+                    this.stability = 80;
+                    this.maxStability = 80;
+                    this.fatigueActive = false;
+                    this.fatigueTimer = 0;
+                } else {
+                    this.stability = 120;
+                    this.maxStability = 120;
+                }
+
+                this.isFlipped = false;    // 是否处于翻船恢复态
+                this.flipTimer = 0;        // 翻船恢复计时
+            }
+
+            update() {
+                // 冲线后慢慢减速
+                if (this.isFinished) {
+                    this.vx = Math.max(0, this.vx - CONFIG.playerDecel);
+                    this.vy = 0;
+                    this.x += this.vx;
+                    this.updateOarAnimation(this.vx);
+                    return;
+                }
+
+                // 翻船恢复逻辑
+                if (this.isFlipped) {
+                    this.vx = 0.5; // 龟速滑行
+                    this.vy = 0;
+                    this.x += this.vx;
+                    this.flipTimer--;
+                    if (this.flipTimer <= 0) {
+                        this.isFlipped = false;
+                        this.stability = Math.floor(this.maxStability * 0.6); // 恢复 60%
+                    }
+                    this.updateOarAnimation(this.vx);
+                    return;
+                }
+
+                // 减计数器
+                if (this.shieldTime > 0) this.shieldTime--;
+
+                // 兔子队专属的冲刺疲劳冷却
+                if (this.type === 'white' && this.fatigueActive) {
+                    this.fatigueTimer--;
+                    if (this.fatigueTimer <= 0) {
+                        this.fatigueActive = false;
+                        floatingTexts.push(new FloatingText(this.x, this.y - 30, '兔子恢复精力！🐇', '#ff80ab', 18, 50));
+                    }
+                    // 疲劳状态限制最大速度，冒汗
+                    this.vx = Math.max(CONFIG.rabbitMinSpeed, this.vx - CONFIG.playerDecel * 3);
+                    if (Math.random() < 0.15) {
+                        particles.push(new Particle(this.x + 5, this.y - 15, Math.random() * 2 - 1, -1, '#80deea', 2.5, 20));
+                    }
+                }
+
+                // 冲刺触发与状态更新
+                let canDash = keys['space'] && this.dashEnergy >= 25 && !this.dashActive;
+                if (this.type === 'white' && this.fatigueActive) canDash = false; // 疲劳时不能冲刺
+
+                if (canDash) {
+                    this.dashActive = true;
+                    this.dashTimer = 45; // 冲刺 45 帧 (~0.75秒)
+                    this.dashEnergy -= 25;
+
+                    let dashText = '🤖 AI 智能冲刺！';
+                    if (this.type === 'white') dashText = '🐇 兔子爆发疾驰！';
+                    else if (this.type === 'green') dashText = '🛡️ 乌龟稳重突进！';
+
+                    floatingTexts.push(new FloatingText(
+                        this.x, 
+                        this.y - 30, 
+                        dashText, 
+                        this.type === 'white' ? '#ff4081' : (this.type === 'green' ? '#4caf50' : '#00e5ff'), 
+                        22, 
+                        50
+                    ));
+                }
+
+                if (this.dashActive) {
+                    let dashSpeedLimit = CONFIG.playerDashSpeed;
+                    if (this.type === 'white') dashSpeedLimit = 12.0; // 兔子冲刺极快
+                    else if (this.type === 'green') dashSpeedLimit = 8.0; // 乌龟冲刺稍慢
+
+                    this.vx = Math.min(dashSpeedLimit, this.vx + CONFIG.playerAccel * 2.5);
+                    this.dashTimer--;
+                    if (this.dashTimer <= 0) {
+                        this.dashActive = false;
+                        if (this.type === 'white') {
+                            this.fatigueActive = true;
+                            this.fatigueTimer = 90; // 1.5 秒疲劳
+                            floatingTexts.push(new FloatingText(this.x, this.y - 30, '呼... 冲刺完好累！💦', '#cfd8dc', 18, 60));
+                        }
+                    }
+                    
+                    // 冲刺释放粒子与速度线
+                    if (Math.random() < 0.6) {
+                        particles.push(new Particle(
+                            this.x - this.width / 2,
+                            this.y + (Math.random() * 16 - 8),
+                            -Math.random() * 4 - 3,
+                            Math.random() * 2 - 1,
+                            this.type === 'green' ? '#e8f5e9' : '#e0f7fa',
+                            Math.random() * 5 + 3,
+                            30,
+                            'water'
+                        ));
+                    }
+                    // 速度线
+                    if (Math.random() < 0.2) {
+                        particles.push(new Particle(
+                            this.x + 400 + Math.random() * 100,
+                            Math.random() * 420 + 90,
+                            -12 - Math.random() * 6,
+                            0,
+                            'rgba(255, 255, 255, 0.4)',
+                            2,
+                            40,
+                            'dash'
+                        ));
+                    }
+                } else {
+                    // 非冲刺状态下的普通加速
+                    if (this.type === 'white' && this.fatigueActive) {
+                        // 疲劳状态不进行普通加速
+                    } else {
+                        let normalMax = CONFIG.playerMaxSpeed;
+                        if (this.type === 'white') normalMax = 7.4; // 兔子最高速度上限高
+                        else if (this.type === 'green') normalMax = 5.0; // 乌龟速度上限稍低
+
+                        if (this.vx < normalMax) {
+                            this.vx = Math.min(normalMax, this.vx + CONFIG.playerAccel);
+                        } else {
+                            this.vx = Math.max(normalMax, this.vx - CONFIG.playerDecel);
+                        }
+                    }
+                }
+
+                // 自然恢复冲刺能量
+                if (this.dashEnergy < 100) {
+                    this.dashEnergy = Math.min(100, this.dashEnergy + 0.12);
+                }
+
+                // 4. WASD/方向键 控制平滑移动
+                let moveY = 0;
+                let moveX = 0;
+
+                if (keys['w'] || keys['arrowup']) moveY = -1;
+                if (keys['s'] || keys['arrowdown']) moveY = 1;
+                if (keys['a'] || keys['arrowleft']) moveX = -1;
+                if (keys['d'] || keys['arrowright']) moveX = 1;
+
+                if (moveX < 0) {
+                    this.vx = Math.max(2.0, this.vx - 0.1); // 手动减速
+                } else if (moveX > 0) {
+                    let maxLim = this.dashActive ? 12.0 : (this.type === 'white' ? 7.8 : (this.type === 'green' ? 5.4 : 6.6));
+                    this.vx = Math.min(this.vx + 0.08, maxLim); // 手动微加速
+                }
+
+                const ySpeed = 4.0;
+                this.y += moveY * ySpeed;
+
+                // 边界约束
+                if (this.y < 105) this.y = 105;
+                if (this.y > 495) this.y = 495;
+
+                this.x += this.vx * playerSpeedMultiplier;
+
+                // 尾迹水花
+                if (Math.random() < 0.3) {
+                    particles.push(new Particle(this.x - this.width / 2, this.y + 10, -this.vx * 0.5, 0.5, 'rgba(255, 255, 255, 0.5)', Math.random() * 3 + 2, 20, 'water'));
+                    particles.push(new Particle(this.x - this.width / 2, this.y - 10, -this.vx * 0.5, -0.5, 'rgba(255, 255, 255, 0.5)', Math.random() * 3 + 2, 20, 'water'));
+                }
+
+                // 护盾粒子
+                if (this.shieldTime > 0) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 45;
+                    particles.push(new Particle(
+                        this.x + Math.cos(angle) * radius,
+                        this.y + Math.sin(angle) * radius,
+                        this.vx * 0.8 + Math.random() - 0.5,
+                        Math.random() * 2 - 1,
+                        'rgba(105, 240, 174, 0.8)',
+                        Math.random() * 4 + 2,
+                        15,
+                        'shield'
+                    ));
+                }
+
+                this.updateOarAnimation(this.vx);
+            }
+
+            // 绘制玩家独特的护盾与受损状态
+            draw(ctx, viewportX) {
+                if (this.isFlipped) {
+                    ctx.save();
+                    ctx.translate(this.x - viewportX, this.y);
+                    ctx.rotate(Math.PI * 0.15 * Math.sin(Date.now() * 0.05));
+                    ctx.translate(-(this.x - viewportX), -this.y);
+                    this.drawBoat(ctx, viewportX);
+                    ctx.restore();
+                    
+                    if (Math.random() < 0.15) {
+                        particles.push(new Particle(this.x + Math.random() * 20 - 10, this.y - 25, Math.random() * 2 - 1, -Math.random() * 1.5 - 0.5, '#ffeb3b', 3, 25, 'star'));
+                    }
+                    return;
+                }
+
+                this.drawBoat(ctx, viewportX);
+
+                if (this.shieldTime > 0) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(105, 240, 174, 0.7)';
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = '#69f0ae';
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(this.x - viewportX, this.y, 52, 0, Math.PI * 2);
+                    ctx.stroke();
+                    
+                    let grad = ctx.createRadialGradient(this.x - viewportX, this.y, 45, this.x - viewportX, this.y, 55);
+                    grad.addColorStop(0, 'rgba(105, 240, 174, 0)');
+                    grad.addColorStop(1, 'rgba(105, 240, 174, 0.25)');
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+
+            damage(amount) {
+                if (this.shieldTime > 0) {
+                    floatingTexts.push(new FloatingText(this.x, this.y - 45, '艾草护身！🛡️', '#69f0ae', 20, 50));
+                    return;
+                }
+                this.stability = Math.max(0, this.stability - amount);
+                if (this.stability <= 0 && !this.isFlipped) {
+                    this.isFlipped = true;
+                    this.flipTimer = 120; // 倒扣 2 秒
+                    floatingTexts.push(new FloatingText(this.x, this.y - 30, '翻船恢复中 🤕', '#ff1744', 22, 90));
+                } else {
+                    floatingTexts.push(new FloatingText(this.x, this.y - 35, `稳定度 -${amount}%`, '#ff5252', 18, 50));
+                }
+            }
+        }
+
+        // ==================== 智能 AI 龙舟控制类 ====================
+        class AIBoat extends Boat {
+            constructor(x, y, type, name) {
+                super(x, y, type, name, false);
+
+                if (type === 'white') {
+                    this.fatigueTimer = 0;
+                    this.isFatigued = false;
+                    this.fatigueDuration = 0;
+                    this.nextFatigueTime = CONFIG.rabbitFatigueInterval;
+                }
+                this.homeY = y;
+            }
+
+            update() {
+                if (this.isFinished) {
+                    this.vx = Math.max(0, this.vx - CONFIG.playerDecel);
+                    this.x += this.vx;
+                    this.updateOarAnimation(this.vx);
+                    return;
+                }
+
+                // AI 机制逻辑
+                if (this.type === 'green') {
+                    // 匀速，完全不受水草浪花影响
+                    this.vx = CONFIG.turtleBaseSpeed;
+                    this.y += Math.sin(Date.now() * 0.0015) * 0.35;
+                } 
+                else if (this.type === 'white') {
+                    // 兔子AI疲劳周期
+                    this.fatigueTimer += 16.67;
+                    if (this.isFatigued) {
+                        this.vx = CONFIG.rabbitMinSpeed;
+                        this.fatigueDuration -= 16.67;
+                        if (this.fatigueDuration <= 0) {
+                            this.isFatigued = false;
+                            this.fatigueTimer = 0;
+                            this.nextFatigueTime = CONFIG.rabbitFatigueInterval + Math.random() * 4000 - 2000;
+                            floatingTexts.push(new FloatingText(this.x, this.y - 35, '小兔精力恢复！🐇', '#ff80ab', 18, 50));
+                        }
+                        if (Math.random() < 0.1) {
+                            particles.push(new Particle(this.x + 5, this.y - 15, Math.random() * 2 - 1, -1, '#80deea', 2.5, 20));
+                        }
+                    } else {
+                        if (this.fatigueTimer >= this.nextFatigueTime) {
+                            this.isFatigued = true;
+                            this.fatigueDuration = CONFIG.rabbitFatigueDuration;
+                            floatingTexts.push(new FloatingText(this.x, this.y - 35, '小兔累了，打个盹 💤', '#cfd8dc', 18, 60));
+                        }
+                        this.vx = CONFIG.rabbitBaseSpeed + Math.sin(Date.now() * 0.001) * 0.4;
+                    }
+                } 
+                else {
+                    // 红龙AI (平衡平稳加速)
+                    this.vx = CONFIG.aiBoatBaseSpeed + Math.cos(Date.now() * 0.001) * 0.25;
+                }
+
+                // 躲避岩石 (红队和白队需要躲避，绿队免疫减速不躲)
+                if (this.type !== 'green') {
+                    let dodgeOffset = 0;
+                    let obstacleAhead = false;
+                    for (let obs of obstacles) {
+                        if (obs.type === 'rock' && obs.x > this.x && obs.x < this.x + 180) {
+                            if (Math.abs(obs.y - this.y) < 50) {
+                                obstacleAhead = true;
+                                dodgeOffset = obs.y > this.y ? -2.2 : 2.2;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (obstacleAhead) {
+                        this.y += dodgeOffset;
+                    } else {
+                        this.y += (this.homeY - this.y) * 0.03; // 回归预定航道
+                    }
+                } else {
+                    this.y += (this.homeY - this.y) * 0.03; // 稳扎稳打
+                }
+
+                if (this.y < 110) this.y = 110;
+                if (this.y > 490) this.y = 490;
+
+                this.x += this.vx;
+                this.updateOarAnimation(this.vx);
+            }
+
+            draw(ctx, viewportX) {
+                this.drawBoat(ctx, viewportX);
+
+                if (this.type === 'white' && this.isFatigued) {
+                    ctx.save();
+                    ctx.translate(this.x - viewportX, this.y);
+                    ctx.strokeStyle = '#37474f';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(this.width / 2 + 2, -6, 2, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        }
+
+        // ==================== 10. 道具与障碍物类 ====================
+        class Item {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 'leaf' (粽叶), 'rice' (糯米), 'date' (红枣), 'shield' (艾草), 'drum' (鼓点)
+                this.radius = 18;
+                this.pulseTimer = Math.random() * 100; // 悬浮起伏定时器
+            }
+
+            update() {
+                // 上下缓动浮动动画
+                this.pulseTimer += 0.06;
+            }
+
+            draw(ctx, viewportX) {
+                const drawX = this.x - viewportX;
+                const drawY = this.y + Math.sin(this.pulseTimer) * 5; // 浮动高度
+
+                ctx.save();
+                
+                // 绘制柔和的发光阴影
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = this.getGlowColor();
+
+                if (this.type === 'leaf') {
+                    // 粽叶：两片交织的绿叶
+                    ctx.fillStyle = '#4caf50';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX - 4, drawY, 6, 15, -Math.PI / 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#81c784';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX + 4, drawY + 2, 6, 15, Math.PI / 4, 0, Math.PI * 2);
+                    ctx.fill();
+                } 
+                else if (this.type === 'rice') {
+                    // 糯米：胖嘟嘟的白米袋
+                    ctx.fillStyle = '#f5f5f5';
+                    ctx.strokeStyle = '#cfd8dc';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX - 8, drawY + 12);
+                    ctx.quadraticCurveTo(drawX - 12, drawY - 4, drawX - 6, drawY - 8);
+                    ctx.lineTo(drawX + 6, drawY - 8);
+                    ctx.quadraticCurveTo(drawX + 12, drawY - 4, drawX + 8, drawY + 12);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // 扎口袋的红细绳
+                    ctx.fillStyle = '#ff1744';
+                    ctx.fillRect(drawX - 7, drawY - 6, 14, 3);
+                } 
+                else if (this.type === 'date') {
+                    // 红枣：深红发亮的枣子
+                    ctx.fillStyle = '#b71c1c';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX, drawY, 8, 12, Math.PI / 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 高光点
+                    ctx.fillStyle = '#ff8a80';
+                    ctx.beginPath();
+                    ctx.arc(drawX - 3, drawY - 4, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                } 
+                else if (this.type === 'shield') {
+                    // 艾草：淡翠绿色的仙草束
+                    ctx.fillStyle = '#00e676';
+                    ctx.beginPath();
+                    // 三瓣叶片
+                    ctx.ellipse(drawX, drawY - 6, 5, 12, 0, 0, Math.PI * 2);
+                    ctx.ellipse(drawX - 8, drawY + 2, 5, 10, -Math.PI / 4, 0, Math.PI * 2);
+                    ctx.ellipse(drawX + 8, drawY + 2, 5, 10, Math.PI / 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 绑绳
+                    ctx.strokeStyle = '#ffee58';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX - 6, drawY + 8);
+                    ctx.lineTo(drawX + 6, drawY + 8);
+                    ctx.stroke();
+                } 
+                else if (this.type === 'drum') {
+                    // 鼓点能量：一面精美龙舟鼓
+                    ctx.fillStyle = '#d32f2f'; // 红色鼓身
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, 13, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffd54f';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    // 鼓心
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 鼓上的八卦或太极点缀（此处用太极简笔）
+                    ctx.fillStyle = '#ffb300';
+                    ctx.font = '9px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('🥁', drawX, drawY);
+                }
+
+                ctx.restore();
+            }
+
+            getGlowColor() {
+                switch(this.type) {
+                    case 'leaf': return 'rgba(76, 175, 80, 0.6)';
+                    case 'rice': return 'rgba(255, 255, 255, 0.6)';
+                    case 'date': return 'rgba(183, 28, 28, 0.6)';
+                    case 'shield': return 'rgba(0, 230, 118, 0.8)';
+                    case 'drum': return 'rgba(255, 179, 0, 0.8)';
+                    default: return 'rgba(255, 255, 255, 0.4)';
+                }
+            }
+        }
+
+        class Obstacle {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type; // 'weed' (水草), 'wave' (浪花), 'rock' (礁石)
+                this.pulseTimer = Math.random() * 100;
+                
+                if (this.type === 'weed') {
+                    this.width = 40;
+                    this.height = 60;
+                    this.radius = 20;
+                } else if (this.type === 'wave') {
+                    this.width = 50;
+                    this.height = 50;
+                    this.radius = 22;
+                } else {
+                    this.width = 45;
+                    this.height = 45;
+                    this.radius = 22;
+                }
+            }
+
+            update() {
+                this.pulseTimer += 0.05;
+            }
+
+            draw(ctx, viewportX) {
+                const drawX = this.x - viewportX;
+                const drawY = this.y;
+
+                ctx.save();
+
+                if (this.type === 'weed') {
+                    // 水草：数根随水流扭动飘浮的翠绿丝带
+                    ctx.strokeStyle = '#2e7d32';
+                    ctx.lineWidth = 4;
+                    ctx.lineCap = 'round';
+                    
+                    const sway = Math.sin(this.pulseTimer) * 8;
+                    // 第一根
+                    ctx.beginPath();
+                    ctx.moveTo(drawX - 8, drawY + 20);
+                    ctx.bezierCurveTo(drawX - 8 + sway, drawY + 5, drawX - 18 + sway, drawY - 5, drawX - 12 + sway, drawY - 20);
+                    ctx.stroke();
+                    // 第二根
+                    ctx.strokeStyle = '#4caf50';
+                    ctx.beginPath();
+                    ctx.moveTo(drawX + 8, drawY + 20);
+                    ctx.bezierCurveTo(drawX + 8 - sway, drawY + 5, drawX + 18 - sway, drawY - 5, drawX + 12 - sway, drawY - 25);
+                    ctx.stroke();
+                } 
+                else if (this.type === 'wave') {
+                    // 浪花：旋转白色的小漩涡浪花
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                    ctx.lineWidth = 3;
+                    const rotateAngle = this.pulseTimer * 1.5;
+                    
+                    ctx.translate(drawX, drawY);
+                    ctx.rotate(rotateAngle);
+                    
+                    // 绘制旋涡线
+                    ctx.beginPath();
+                    for (let angle = 0; angle < Math.PI * 3; angle += 0.1) {
+                        let r = (angle / (Math.PI * 3)) * 20;
+                        let x = Math.cos(angle) * r;
+                        let y = Math.sin(angle) * r;
+                        if (angle === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                } 
+                else if (this.type === 'rock') {
+                    // 礁石：棱角分明的坚固黑灰色礁石
+                    ctx.fillStyle = '#37474f';
+                    ctx.strokeStyle = '#263238';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX - 22, drawY + 12);
+                    ctx.lineTo(drawX - 12, drawY - 18);
+                    ctx.lineTo(drawX + 6, drawY - 22);
+                    ctx.lineTo(drawX + 22, drawY - 2);
+                    ctx.lineTo(drawX + 15, drawY + 18);
+                    ctx.lineTo(drawX - 10, drawY + 22);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // 加白光棱角反射，增加3D质感
+                    ctx.strokeStyle = '#90a4ae';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(drawX - 12, drawY - 18);
+                    ctx.lineTo(drawX + 6, drawY - 22);
+                    ctx.lineTo(drawX - 2, drawY + 2);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        // ==================== 11. 赛道关卡生成器 ====================
+        // 生成极富节日氛围与难度渐进的赛道
+        function generateTrack() {
+            items = [];
+            obstacles = [];
+            
+            // 岸边彩旗与端午粽子摊 (仅供背景渲染参考，直接根据 X 坐标在 draw 阶段画，省内存)
+            
+            // 沿途生成道具与障碍
+            // 整个赛道 10000 像素，分为三阶段
+            
+            let currentX = 600; // 前 600 像素安全，无障碍
+            
+            while (currentX < CONFIG.raceDistance - 400) {
+                let segmentProgress = currentX / CONFIG.raceDistance;
+                
+                // 第 1 阶段 (0% - 33%): 新手练习，材料多，障碍少，大鼓多
+                if (segmentProgress < 0.33) {
+                    // 较大概率生成材料
+                    if (Math.random() < 0.45) {
+                        let materialTypes = ['leaf', 'rice', 'date'];
+                        let type = materialTypes[Math.floor(Math.random() * materialTypes.length)];
+                        items.push(new Item(currentX, Math.random() * 380 + 110, type));
+                    }
+                    // 极小概率生成普通障碍物
+                    if (Math.random() < 0.15) {
+                        let obsTypes = ['weed', 'wave'];
+                        let type = obsTypes[Math.floor(Math.random() * obsTypes.length)];
+                        obstacles.push(new Obstacle(currentX, Math.random() * 380 + 110, type));
+                    }
+                    // 鼓点能量
+                    if (Math.random() < 0.15) {
+                        items.push(new Item(currentX, Math.random() * 380 + 110, 'drum'));
+                    }
+                    currentX += 160 + Math.random() * 100;
+                }
+                // 第 2 阶段 (33% - 66%): 水急草密，材料变得丰富，增加了礁石障碍
+                else if (segmentProgress < 0.66) {
+                    // 障碍物变密
+                    if (Math.random() < 0.40) {
+                        let obsTypes = ['weed', 'wave', 'rock'];
+                        let type = obsTypes[Math.floor(Math.random() * obsTypes.length)];
+                        obstacles.push(new Obstacle(currentX, Math.random() * 380 + 110, type));
+                    }
+                    // 材料大量生成
+                    if (Math.random() < 0.50) {
+                        let materialTypes = ['leaf', 'rice', 'date'];
+                        let type = materialTypes[Math.floor(Math.random() * materialTypes.length)];
+                        items.push(new Item(currentX, Math.random() * 380 + 110, type));
+                    }
+                    // 艾草防具
+                    if (Math.random() < 0.10) {
+                        items.push(new Item(currentX, Math.random() * 380 + 110, 'shield'));
+                    }
+                    currentX += 120 + Math.random() * 80;
+                }
+                // 第 3 阶段 (66% - 100%): 冲刺期，障碍物更加狂暴，礁石密布，但艾草与鼓也变多
+                else {
+                    // 大量岩石
+                    if (Math.random() < 0.50) {
+                        let type = Math.random() < 0.6 ? 'rock' : 'wave';
+                        obstacles.push(new Obstacle(currentX, Math.random() * 380 + 110, type));
+                    }
+                    // 丰富的冲刺大鼓与艾草
+                    if (Math.random() < 0.25) {
+                        items.push(new Item(currentX, Math.random() * 380 + 110, 'drum'));
+                    }
+                    if (Math.random() < 0.18) {
+                        items.push(new Item(currentX, Math.random() * 380 + 110, 'shield'));
+                    }
+                    // 散落的材料
+                    if (Math.random() < 0.35) {
+                        let materialTypes = ['leaf', 'rice', 'date'];
+                        let type = materialTypes[Math.floor(Math.random() * materialTypes.length)];
+                        items.push(new Item(currentX, Math.random() * 380 + 110, type));
+                    }
+                    currentX += 110 + Math.random() * 60;
+                }
+            }
+        }
+
+        // ==================== 12. 碰撞检测与逻辑核心 ====================
+
+        // AABB 碰撞检测
+        function checkCollision(rect1, rect2) {
+            return rect1.x - rect1.width/2 < rect2.x + rect2.radius &&
+                   rect1.x + rect1.width/2 > rect2.x - rect2.radius &&
+                   rect1.y - rect1.height/2 < rect2.y + rect2.radius &&
+                   rect1.y + rect1.height/2 > rect2.y - rect2.radius;
+        }
+
+        function handleCollisions() {
+            if (player.isFinished || player.isFlipped) return;
+
+            // 1. 道具收集
+            for (let i = items.length - 1; i >= 0; i--) {
+                let it = items[i];
+                if (checkCollision(player, it)) {
+                    // 收集音效反馈 (纯正视觉反馈)
+                    triggerCollectParticles(it.x, it.y, it.getGlowColor());
+                    
+                    if (it.type === 'leaf' || it.type === 'rice' || it.type === 'date') {
+                        materialsCount++;
+                        // 连击 Combo
+                        comboTimer = 120; // 2秒有效期 (60帧/s)
+                        comboCount++;
+                        
+                        let baseScore = 100;
+                        let addedScore = baseScore * comboCount;
+                        score += addedScore;
+                        
+                        let popupText = `+${addedScore}`;
+                        if (comboCount > 1) {
+                            popupText += ` 连收 x${comboCount}!`;
+                        }
+                        floatingTexts.push(new FloatingText(it.x, it.y - 20, popupText, '#ffeb3b', 18 + Math.min(comboCount, 6)*2, 50));
+                    } 
+                    else if (it.type === 'shield') {
+                        player.shieldTime = 300; // 5 秒护盾 (5 * 60)
+                        score += 50;
+                        floatingTexts.push(new FloatingText(it.x, it.y - 20, '艾草金光罩！🛡️', '#69f0ae', 22, 60));
+                    } 
+                    else if (it.type === 'drum') {
+                        player.dashEnergy = Math.min(100, player.dashEnergy + 30);
+                        score += 50;
+                        floatingTexts.push(new FloatingText(it.x, it.y - 20, '擂鼓聚能！🥁 +30%', '#2979ff', 20, 50));
+                    }
+
+                    // 移出数组
+                    items.splice(i, 1);
+                }
+            }
+
+            // 2. 障碍物碰撞
+            for (let obs of obstacles) {
+                if (checkCollision(player, obs)) {
+                    // 判定是否已经处理过这次碰撞 (防止帧帧重复扣稳定值)
+                    if (obs.hitCooldown > 0) {
+                        obs.hitCooldown--;
+                        continue;
+                    }
+                    obs.hitCooldown = 60; // 1秒CD
+
+                    if (player.shieldTime > 0) {
+                        // 艾草护盾免疫
+                        floatingTexts.push(new FloatingText(player.x, player.y - 40, '艾草护身！🛡️', '#69f0ae', 20, 45));
+                        triggerCollectParticles(obs.x, obs.y, '#69f0ae');
+                        continue;
+                    }
+
+                    // 玄武绿龟队特殊被动属性：免疫水草和波浪，对礁石有高抗性
+                    if (player.type === 'green') {
+                        if (obs.type === 'weed') {
+                            floatingTexts.push(new FloatingText(player.x, player.y - 35, '玄武避水！🌿', '#81c784', 18, 45));
+                            triggerCollectParticles(obs.x, obs.y, '#2e7d32');
+                        } 
+                        else if (obs.type === 'wave') {
+                            floatingTexts.push(new FloatingText(player.x, player.y - 35, '玄武破浪！🌊', '#81c784', 18, 45));
+                            triggerCollectParticles(obs.x, obs.y, 'rgba(255,255,255,0.8)');
+                        } 
+                        else if (obs.type === 'rock') {
+                            player.vx *= 0.6; // 仅轻微减速
+                            player.damage(10); // 仅扣 10% 稳定值
+                            triggerCollectParticles(obs.x, obs.y, '#37474f');
+                        }
+                        continue;
+                    }
+
+                    // 正常碰撞逻辑
+                    if (obs.type === 'weed') {
+                        player.vx *= CONFIG.slowdownWeed;
+                        player.damage(5);
+                        triggerCollectParticles(obs.x, obs.y, '#2e7d32');
+                    } 
+                    else if (obs.type === 'wave') {
+                        player.vx *= CONFIG.slowdownWave;
+                        player.damage(10);
+                        triggerCollectParticles(obs.x, obs.y, 'rgba(255,255,255,0.8)');
+                    } 
+                    else if (obs.type === 'rock') {
+                        player.vx *= CONFIG.slowdownRock;
+                        player.damage(25); // 扣 25% 稳定度
+                        triggerCollectParticles(obs.x, obs.y, '#37474f');
+                    }
+                }
+            }
+        }
+
+        // 收集物爆炸粒子反馈
+        function triggerCollectParticles(x, y, color) {
+            for (let i = 0; i < 12; i++) {
+                particles.push(new Particle(
+                    x,
+                    y,
+                    Math.random() * 6 - 3,
+                    Math.random() * 6 - 3,
+                    color,
+                    Math.random() * 4 + 2,
+                    30 + Math.random() * 20,
+                    'star'
+                ));
+            }
+        }
+
+        // ==================== 13. 画面绘制核心 ====================
+
+        // 绘制动态背景（水面流动、两岸、装饰、粽子摊）
+        function drawBackground(viewportX) {
+            // 1. 江水渐变底色
+            let skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            skyGrad.addColorStop(0, '#00838f'); // 翡翠蓝
+            skyGrad.addColorStop(0.5, '#0097a7');
+            skyGrad.addColorStop(1, '#006064');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. 两岸绿色河堤
+            // 顶岸 (0 - 90 像素)
+            ctx.fillStyle = '#2e7d32'; // 森林深绿
+            ctx.fillRect(0, 0, canvas.width, 95);
+            ctx.fillStyle = '#1b5e20'; // 阴影边 border
+            ctx.fillRect(0, 90, canvas.width, 5);
+
+            // 底岸 (510 - 600 像素)
+            ctx.fillStyle = '#2e7d32';
+            ctx.fillRect(0, 505, canvas.width, 95);
+            ctx.fillStyle = '#1b5e20';
+            ctx.fillRect(0, 505, canvas.width, 5);
+
+            // 3. 流动的水波纹
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1.5;
+            
+            // 基于 player 绝对位置来移动水波纹，制造划行流动感
+            const waveSpacing = 200;
+            const scrollOffset = -(viewportX % waveSpacing);
+            
+            for (let x = scrollOffset - waveSpacing; x < canvas.width + waveSpacing; x += waveSpacing) {
+                for (let y = 120; y < 490; y += 70) {
+                    // 错开浪花
+                    let shift = (y % 140 === 0) ? waveSpacing / 2 : 0;
+                    ctx.beginPath();
+                    ctx.arc(x + shift, y, 40, 0, Math.PI * 0.25);
+                    ctx.stroke();
+                }
+            }
+
+            // 4. 荷叶绘制 (漂浮点缀)
+            ctx.fillStyle = '#388e3c';
+            const lotusLeafInterval = 400;
+            const lotusStart = -(viewportX % lotusLeafInterval);
+            for (let x = lotusStart - lotusLeafInterval; x < canvas.width + lotusLeafInterval; x += lotusLeafInterval) {
+                // 利用 X 伪随机算出 Y 和大小
+                let seed = Math.sin(x + viewportX) * 10000;
+                let pseudoY = 130 + (Math.abs(seed) % 340); // 河道范围内
+                let pseudoSize = 10 + (Math.abs(seed * 2) % 12);
+                let drawX = x + (Math.abs(seed * 3) % 150);
+
+                ctx.save();
+                ctx.translate(drawX, pseudoY);
+                // 画荷叶圆圈
+                ctx.beginPath();
+                ctx.arc(0, 0, pseudoSize, 0, Math.PI * 1.75); // 留一个缺角
+                ctx.lineTo(0, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 5. 岸边端午彩旗 (Flags)
+            const flagInterval = 280;
+            const flagStart = -(viewportX % flagInterval);
+            for (let x = flagStart - flagInterval; x < canvas.width + flagInterval; x += flagInterval) {
+                let absoluteX = x + viewportX;
+                // 计算当前彩旗基于位置的波浪抖动
+                let wave = Math.sin(Date.now() * 0.005 + absoluteX * 0.01) * 5;
+
+                // 顶岸旗帜
+                drawFestivalFlag(ctx, x, 75, wave, '#e91e63'); // 粉红
+                // 底岸旗帜
+                drawFestivalFlag(ctx, x + 80, 525, wave, '#ffd54f'); // 金黄
+            }
+
+            // 6. 岸边端午粽子摊 (Zongzi Stalls)
+            // 在特定的 X 绝对坐标摆放粽子铺，营造节日市集感
+            const stallPositions = [1500, 3500, 5500, 7500];
+            stallPositions.forEach((stallX, index) => {
+                let screenX = stallX - viewportX;
+                if (screenX > -120 && screenX < canvas.width + 120) {
+                    // 顶岸大摊位
+                    drawZongziStall(ctx, screenX, 60, index % 2 === 0);
+                }
+            });
+        }
+
+        // 绘制端午彩旗
+        function drawFestivalFlag(ctx, x, y, waveOffset, color) {
+            ctx.save();
+            // 旗杆
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - 35);
+            ctx.stroke();
+
+            // 飘扬的三角形旗面
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 35);
+            ctx.lineTo(x + 22, y - 26 + waveOffset);
+            ctx.lineTo(x, y - 17);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // 绘制精美的端午粽子铺
+        function drawZongziStall(ctx, x, y, isTop = true) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            if (!isTop) {
+                ctx.scale(1, -1); // 底岸铺位镜像
+            }
+
+            // 铺子底座/桌子
+            ctx.fillStyle = '#8d6e63';
+            ctx.fillRect(-25, 0, 50, 20);
+            ctx.fillStyle = '#a1887f';
+            ctx.fillRect(-22, 2, 44, 16);
+
+            // 挂着的粽子串 (绿色小三角)
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.moveTo(-15, 20); ctx.lineTo(-19, 26); ctx.lineTo(-11, 26); ctx.closePath(); ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(15, 20); ctx.lineTo(11, 26); ctx.lineTo(19, 26); ctx.closePath(); ctx.fill();
+
+            // 粽子摊顶棚 (红黄相间条纹)
+            ctx.fillStyle = '#ffb300';
+            ctx.fillRect(-32, -35, 64, 10);
+            ctx.fillStyle = '#d32f2f';
+            ctx.fillRect(-32, -35, 12, 10);
+            ctx.fillRect(-8, -35, 16, 10);
+            ctx.fillRect(20, -35, 12, 10);
+
+            // 棚子立柱
+            ctx.strokeStyle = '#5d4037';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-28, 0); ctx.lineTo(-28, -25);
+            ctx.moveTo(28, 0); ctx.lineTo(28, -25);
+            ctx.stroke();
+
+            // 挂招牌 "粽"
+            ctx.fillStyle = '#ffd54f';
+            ctx.beginPath();
+            ctx.arc(0, -18, 9, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#d32f2f';
+            ctx.font = 'bold 10px Helvetica';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            // 修正缩放导致文字倒置
+            if (!isTop) ctx.scale(1, -1);
+            ctx.fillText('粽', 0, isTop ? -18 : 18);
+
+            ctx.restore();
+        }
+
+        // 绘制终点凯旋门线
+        function drawFinishLine(ctx, viewportX) {
+            const finishX = CONFIG.raceDistance;
+            const screenX = finishX - viewportX;
+
+            if (screenX < -200 || screenX > canvas.width + 300) return;
+
+            ctx.save();
+            ctx.translate(screenX, 0);
+
+            // 1. 终点线的水下白线
+            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+            ctx.lineWidth = 6;
+            ctx.setLineDash([15, 10]);
+            ctx.beginPath();
+            ctx.moveTo(0, 95);
+            ctx.lineTo(0, 505);
+            ctx.stroke();
+            ctx.setLineDash([]); // 还原
+
+            // 2. 终点大跨江凯旋门 (巨型红金牌楼)
+            // 顶侧柱
+            ctx.fillStyle = '#b71c1c';
+            ctx.fillRect(-15, 40, 30, 60);
+            // 底侧柱
+            ctx.fillRect(-15, 500, 30, 60);
+
+            // 牌楼横梁 (金碧辉煌)
+            let beamGrad = ctx.createLinearGradient(0, 90, 0, 105);
+            beamGrad.addColorStop(0, '#ffd54f');
+            beamGrad.addColorStop(1, '#ff8f00');
+            ctx.fillStyle = beamGrad;
+            ctx.fillRect(-120, 80, 240, 15);
+            ctx.fillStyle = '#b71c1c';
+            ctx.fillRect(-100, 75, 200, 5);
+
+            // 大灯笼点缀
+            drawLantern(ctx, -70, 105);
+            drawLantern(ctx, 70, 105);
+
+            // 终点横幅文字 "终点夺魁"
+            ctx.fillStyle = '#ffb300';
+            ctx.strokeStyle = '#b71c1c';
+            ctx.lineWidth = 4;
+            ctx.font = 'bold 24px "Microsoft YaHei", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.strokeText('🎏 终点夺魁 🎏', 0, 65);
+            ctx.fillText('🎏 终点夺魁 🎏', 0, 65);
+
+            ctx.restore();
+        }
+
+        // 牌架小挂件灯笼
+        function drawLantern(ctx, x, y) {
+            ctx.save();
+            ctx.strokeStyle = '#ffd54f';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x, y - 10);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+
+            // 灯笼身
+            ctx.fillStyle = '#e53935';
+            ctx.beginPath();
+            ctx.ellipse(x, y + 8, 8, 11, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            
+            // 灯穗
+            ctx.strokeStyle = '#ffd54f';
+            ctx.beginPath();
+            ctx.moveTo(x, y + 19);
+            ctx.lineTo(x, y + 26);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // 绘制赛道总进度小地图 (底部)
+        function drawMiniMap() {
+            const mapW = 600;
+            const mapH = 10;
+            const mapX = (canvas.width - mapW) / 2;
+            const mapY = canvas.height - 25;
+
+            ctx.save();
+            // 背景槽
+            ctx.fillStyle = 'rgba(10, 31, 29, 0.6)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(mapX, mapY, mapW, mapH, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            // 终点标志
+            ctx.fillStyle = '#ff5252';
+            ctx.font = '12px Arial';
+            ctx.fillText('🚩 终点', mapX + mapW - 15, mapY - 4);
+
+            // 绘制参赛选手图标
+            // 换算函数
+            const getMapPos = (x) => mapX + (Math.min(x, CONFIG.raceDistance) / CONFIG.raceDistance) * mapW;
+
+            const getColorByType = (type) => {
+                if (type === 'red') return '#ff1744';
+                if (type === 'white') return '#eceff1';
+                return '#4caf50';
+            };
+
+            // AI 1
+            ctx.fillStyle = getColorByType(aiRabbit.type);
+            ctx.beginPath();
+            ctx.arc(getMapPos(aiRabbit.x), mapY + mapH/2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // AI 2
+            ctx.fillStyle = getColorByType(aiTurtle.type);
+            ctx.beginPath();
+            ctx.arc(getMapPos(aiTurtle.x), mapY + mapH/2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 玩家
+            ctx.fillStyle = getColorByType(player.type);
+            ctx.strokeStyle = '#ffd54f';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(getMapPos(player.x), mapY + mapH/2, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        // ==================== 14. 烟花特效粒子 ====================
+        function triggerVictoryFireworks() {
+            if (gameState !== 'victory') return;
+
+            // 随机在屏幕各处绽放烟花
+            if (Math.random() < 0.08) {
+                const fireX = player.x + (Math.random() * 800 - 200); // 在玩家附近
+                const fireY = Math.random() * 250 + 100;
+                const colors = ['#ff1744', '#00e5ff', '#ffeb3b', '#aa00ff', '#ff6d00', '#00e676'];
+                const selectedColor = colors[Math.floor(Math.random() * colors.length)];
+                
+                // 生成爆炸环
+                for (let i = 0; i < 40; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 4 + 2;
+                    particles.push(new Particle(
+                        fireX,
+                        fireY,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        selectedColor,
+                        Math.random() * 3.5 + 1.5,
+                        60 + Math.random() * 30,
+                        'firework'
+                    ));
+                }
+            }
+        }
+
+
+        // ==================== 14.1 游戏过程控制：暂停 / 休息 / 加速 ====================
+        function updatePlayerRestingState() {
+            if (!player || player.isFinished) return;
+
+            // 休息时：玩家所选龙舟完全停住，但其他两只龙舟仍正常比赛
+            player.vx = 0;
+            player.vy = 0;
+            player.dashActive = false;
+            player.updateOarAnimation(0);
+
+            if (player.dashEnergy < 100) {
+                player.dashEnergy = Math.min(100, player.dashEnergy + 0.18);
+            }
+
+            if (player.shieldTime > 0) {
+                player.shieldTime--;
+            }
+        }
+
+        function updateControlButtons() {
+            const pauseBtn = document.getElementById('btn-pause-game');
+            const restBtn = document.getElementById('btn-rest-player');
+            const speed2Btn = document.getElementById('btn-speed-2');
+            const speed10Btn = document.getElementById('btn-speed-10');
+            const status = document.getElementById('mode-status');
+            const endRestBtn = document.getElementById('btn-end-rest');
+
+            if (!pauseBtn || !restBtn || !speed2Btn || !speed10Btn || !status || !endRestBtn) return;
+
+            pauseBtn.classList.toggle('active', isGamePaused);
+            restBtn.classList.toggle('active', isPlayerResting);
+            speed2Btn.classList.toggle('active', playerSpeedMultiplier === 2);
+            speed10Btn.classList.toggle('active', playerSpeedMultiplier === 10);
+
+            pauseBtn.innerText = isGamePaused ? '继续比赛' : '暂停';
+            restBtn.innerText = isPlayerResting ? '休息中' : '休息一会';
+            endRestBtn.classList.toggle('show', isPlayerResting && !isGamePaused);
+
+            let statusText = '模式：正常';
+            if (isGamePaused) {
+                statusText = '模式：全部暂停';
+            } else if (isPlayerResting) {
+                statusText = '模式：休息中，点击「返回比赛」继续';
+            } else if (playerSpeedMultiplier === 2) {
+                statusText = '模式：玩家龙舟 2倍速';
+            } else if (playerSpeedMultiplier === 10) {
+                statusText = '模式：玩家龙舟 10倍速';
+            }
+            status.innerText = statusText;
+        }
+
+        function drawModeBanner() {
+            if (!player || gameState !== 'playing') return;
+
+            let title = '';
+            let subText = '';
+            if (isGamePaused) {
+                title = '已暂停';
+                subText = '点击右上角「继续比赛」恢复';
+            } else if (isPlayerResting) {
+                title = '休息中';
+                subText = '你的龙舟暂停，其他两只继续前进';
+            } else if (playerSpeedMultiplier > 1) {
+                title = `${playerSpeedMultiplier} 倍加速`;
+                subText = '仅玩家龙舟加速';
+            } else {
+                return;
+            }
+
+            const boxW = 280;
+            const boxH = 58;
+            const x = 306;
+            const y = 96;
+
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = 'rgba(5, 22, 20, 0.70)';
+            ctx.strokeStyle = 'rgba(255, 202, 40, 0.76)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(x, y, boxW, boxH, 16);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#ffca28';
+            ctx.font = 'bold 22px "Microsoft YaHei", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(title, x + boxW / 2, y + 24);
+
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.font = 'bold 12px "Microsoft YaHei", sans-serif';
+            ctx.fillText(subText, x + boxW / 2, y + 43);
+            ctx.restore();
+        }
+
+
+        // ==================== 15. 核心游戏循环 (Game Loop) ====================
+        
+        function update(deltaTime) {
+            if (gameState === 'playing') {
+                if (isGamePaused) {
+                    updateControlButtons();
+                } else {
+                // 1. 倒计时减少
+                gameTime = Math.max(0, gameTime - deltaTime);
+                if (gameTime <= 0) {
+                    endGame(false, 'time_out');
+                }
+
+                // 2. 连续收集计时器
+                if (comboTimer > 0) {
+                    comboTimer--;
+                    if (comboTimer <= 0) {
+                        comboCount = 0; // Combo 归零
+                    }
+                }
+
+                // 3. 更新实体
+                if (isPlayerResting) {
+                    updatePlayerRestingState();
+                } else {
+                    player.update();
+                }
+                aiRabbit.update();
+                aiTurtle.update();
+
+                // 4. AI 与玩家终点冲线判定
+                [player, aiRabbit, aiTurtle].forEach(boat => {
+                    if (!boat.isFinished && boat.x >= CONFIG.raceDistance) {
+                        boat.isFinished = true;
+                        finishedBoats.push({
+                            name: boat.name,
+                            time: CONFIG.timeLimit - gameTime
+                        });
+                        
+                        // 如果玩家冲过终点线，立即结算
+                        if (boat.isPlayer) {
+                            if (materialsCount >= CONFIG.requiredMaterials) {
+                                endGame(true, 'success');
+                            } else {
+                                endGame(false, 'lack_materials');
+                            }
+                        }
+                    }
+                });
+
+                // 5. 碰撞检测与逻辑
+                handleCollisions();
+
+                // 6. 装饰与物品动画
+                items.forEach(it => it.update());
+                obstacles.forEach(obs => obs.update());
+                }
+            }
+
+            // 粒子与浮动文字更新 (在所有游戏状态下运行)
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                floatingTexts[i].update();
+                if (floatingTexts[i].life <= 0) floatingTexts.splice(i, 1);
+            }
+
+            // 如果处于获胜状态，持续更新烟花
+            if (gameState === 'victory') {
+                triggerVictoryFireworks();
+            }
+
+            // 7. 更新 HUD UI DOM 节点 (减少重绘消耗)
+            if (gameState === 'playing') {
+                document.getElementById('hud-score').innerText = score;
+                document.getElementById('hud-materials').innerText = `${materialsCount} / ${CONFIG.requiredMaterials}`;
+                document.getElementById('hud-time').innerText = `${gameTime.toFixed(1)}s`;
+                
+                // 计算当前排名
+                let rankList = [
+                    { name: 'player', x: player.x },
+                    { name: 'rabbit', x: aiRabbit.x },
+                    { name: 'turtle', x: aiTurtle.x }
+                ];
+                rankList.sort((a, b) => b.x - a.x);
+                let pRank = rankList.findIndex(item => item.name === 'player') + 1;
+                const rankText = `第 ${pRank} 名`;
+                const rankBadge = document.getElementById('rank-badge');
+                if (rankBadge.innerText !== rankText) {
+                    rankBadge.innerText = rankText;
+                    if (pRank === 1) {
+                        rankBadge.style.background = 'linear-gradient(135deg, #ffd54f, #f57c00)';
+                    } else if (pRank === 2) {
+                        rankBadge.style.background = 'linear-gradient(135deg, #b0bec5, #78909c)';
+                    } else {
+                        rankBadge.style.background = 'linear-gradient(135deg, #a1887f, #8d6e63)';
+                    }
+                }
+
+                // 进度条
+                document.getElementById('energy-fill').style.width = `${player.dashEnergy}%`;
+                document.getElementById('stability-fill').style.width = `${(player.stability / player.maxStability) * 100}%`;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 镜头计算：镜头跟随 player 的 X 位置，使玩家位于画布的约 1/4 (X = 220 像素)
+            let viewportX = player.x - 220;
+            // 限制镜头的最左侧边界
+            if (viewportX < 0) viewportX = 0;
+            // 限制镜头的最右侧边界
+            const maxViewport = CONFIG.raceDistance - canvas.width + 300;
+            if (viewportX > maxViewport) viewportX = maxViewport;
+
+            // 1. 背景层
+            drawBackground(viewportX);
+
+            // 2. 终点线横跨牌楼
+            drawFinishLine(ctx, viewportX);
+
+            // 3. 道具与障碍物
+            items.forEach(it => it.draw(ctx, viewportX));
+            obstacles.forEach(obs => obs.draw(ctx, viewportX));
+
+            // 4. 参赛者龙舟
+            aiRabbit.draw(ctx, viewportX);
+            aiTurtle.draw(ctx, viewportX);
+            player.draw(ctx, viewportX); // 玩家层级置顶，防遮挡
+
+            // 5. 粒子与特效
+            particles.forEach(p => p.draw(ctx, viewportX));
+            floatingTexts.forEach(t => t.draw(ctx, viewportX));
+
+            // 6. 底部小地图
+            drawMiniMap();
+
+            // 7. 模式提示层
+            drawModeBanner();
+        }
+
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            const elapsed = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // 限制最大帧间隔，防止后台唤醒后巨幅瞬移
+            let deltaTime = Math.min(elapsed, 0.1);
+
+            update(deltaTime);
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ==================== 16. 游戏流程控制与重置 ====================
+
+        function initGame() {
+            gameTime = CONFIG.timeLimit;
+            score = 0;
+            materialsCount = 0;
+            comboCount = 0;
+            comboTimer = 0;
+            finishedBoats = [];
+            
+            // 根据玩家选择的队伍，分配玩家与两个AI对手的阵营
+            let aiTeams = ['red', 'white', 'green'].filter(t => t !== selectedTeam);
+            
+            // 实例化玩家
+            player = new PlayerBoat(200, 300, selectedTeam);
+            
+            // 实例化 AI 1
+            let ai1Name = aiTeams[0] === 'red' ? '红龙队 AI' : (aiTeams[0] === 'white' ? '白兔队 AI' : '绿龟队 AI');
+            aiRabbit = new AIBoat(180, 200, aiTeams[0], ai1Name);
+            
+            // 实例化 AI 2
+            let ai2Name = aiTeams[1] === 'red' ? '红龙队 AI' : (aiTeams[1] === 'white' ? '白兔队 AI' : '绿龟队 AI');
+            aiTurtle = new AIBoat(190, 400, aiTeams[1], ai2Name);
+
+            particles = [];
+            floatingTexts = [];
+            keys['space'] = false;
+                        isGamePaused = false;
+            isPlayerResting = false;
+            playerSpeedMultiplier = 1;
+            updateControlButtons();
+
+            // 产生赛道分布
+            generateTrack();
+
+            // 重设 HUD 显示
+            document.getElementById('hud-score').innerText = '0';
+            document.getElementById('hud-materials').innerText = `0 / ${CONFIG.requiredMaterials}`;
+            document.getElementById('hud-time').innerText = `${CONFIG.timeLimit.toFixed(1)}s`;
+            document.getElementById('rank-badge').innerText = '第 3 名';
+            document.getElementById('energy-fill').style.width = '100%';
+            document.getElementById('stability-fill').style.width = '100%';
+        }
+
+        function startGame() {
+            initGame();
+            gameState = 'playing';
+            isGamePaused = false;
+            isPlayerResting = false;
+            playerSpeedMultiplier = 1;
+            updateControlButtons();
+            document.getElementById('start-overlay').classList.add('hidden');
+            document.getElementById('help-overlay').classList.add('hidden');
+            document.getElementById('end-overlay').classList.add('hidden');
+        }
+
+
+        function returnToHome() {
+            gameState = 'start';
+            isGamePaused = false;
+            isPlayerResting = false;
+            playerSpeedMultiplier = 1;
+            keys['space'] = false;
+
+            initGame();
+            updateSelectedBoatUI();
+            updateControlButtons();
+
+            document.getElementById('start-overlay').classList.remove('hidden');
+            document.getElementById('help-overlay').classList.add('hidden');
+            document.getElementById('end-overlay').classList.add('hidden');
+        }
+
+        // 比赛结束结算
+        function endGame(isWin, reason) {
+            if (gameState === 'victory' || gameState === 'gameover') return;
+            
+            if (isWin) {
+                gameState = 'victory';
+                showEndScreen(true, '端午夺魁！你完成了龙舟追粽赛！', '祝你端午安康，百舸争流，独占鳌头！');
+                
+                // 瞬间在全屏释放大量彩带粒子
+                for (let i = 0; i < 80; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 5 + 3;
+                    particles.push(new Particle(
+                        player.x + Math.random() * 600 - 300,
+                        Math.random() * 300 + 100,
+                        Math.cos(angle) * speed,
+                        Math.sin(angle) * speed,
+                        `hsl(${Math.random() * 360}, 90%, 60%)`,
+                        Math.random() * 4 + 2,
+                        90 + Math.random() * 40,
+                        'firework'
+                    ));
+                }
+            } else {
+                gameState = 'gameover';
+                let title = '惜败！继续加油！';
+                let desc = '';
+                if (reason === 'time_out') {
+                    title = '时间到！';
+                    desc = '龙舟还没冲到终点，再练习一下掌握鼓点冲刺吧！';
+                } else if (reason === 'lack_materials') {
+                    title = '还差一点！';
+                    desc = `冲过了终点，但粽子材料不够 (当前收集 ${materialsCount} / ${CONFIG.requiredMaterials})，需要重新挑战！`;
+                }
+                showEndScreen(false, title, desc);
+            }
+        }
+
+        function showEndScreen(isSuccess, title, subtitle) {
+            const endOverlay = document.getElementById('end-overlay');
+            const resTitle = document.getElementById('result-title');
+            const statRank = document.getElementById('stat-rank');
+            const statMats = document.getElementById('stat-materials');
+            const statScore = document.getElementById('stat-score');
+            const blessing = document.getElementById('blessing-text');
+
+            resTitle.innerText = title;
+            if (isSuccess) {
+                resTitle.className = 'result-title win';
+            } else {
+                resTitle.className = 'result-title lose';
+            }
+
+            // 计算玩家的最终名次
+            let finalRank = 3;
+            // 找出 player 在 finishedBoats 里的位置
+            let playerIndex = finishedBoats.findIndex(b => b.name.startsWith('玩家龙舟'));
+            if (playerIndex !== -1) {
+                finalRank = playerIndex + 1;
+            } else {
+                // 如果时间到了，玩家还没冲线，计算最终排在第几 (按 X 坐标排)
+                let tempRankList = [
+                    { name: 'player', x: player.x },
+                    { name: 'rabbit', x: aiRabbit.x },
+                    { name: 'turtle', x: aiTurtle.x }
+                ];
+                tempRankList.sort((a, b) => b.x - a.x);
+                finalRank = tempRankList.findIndex(item => item.name === 'player') + 1;
+            }
+
+            statRank.innerText = `第 ${finalRank} 名`;
+            statMats.innerText = `${materialsCount} 个`;
+            statScore.innerText = score;
+            blessing.innerText = subtitle;
+
+            endOverlay.classList.remove('hidden');
+        }
+
+        // ==================== 17. 初始化绑定 ====================
+        
+        // 绑定按钮点击
+        document.getElementById('btn-start').addEventListener('click', () => {
+            startGame();
+        });
+
+        document.getElementById('btn-show-help').addEventListener('click', () => {
+            document.getElementById('help-overlay').classList.remove('hidden');
+        });
+
+        document.getElementById('btn-close-help').addEventListener('click', () => {
+            document.getElementById('help-overlay').classList.add('hidden');
+        });
+
+        document.getElementById('btn-help-start').addEventListener('click', () => {
+            startGame();
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            returnToHome();
+        });
+
+
+        document.getElementById('btn-pause-game').addEventListener('click', () => {
+            if (gameState !== 'playing') return;
+            isGamePaused = !isGamePaused;
+            updateControlButtons();
+        });
+
+        document.getElementById('btn-rest-player').addEventListener('click', () => {
+            if (gameState !== 'playing') return;
+            if (isGamePaused) return;
+            isPlayerResting = !isPlayerResting;
+            if (isPlayerResting) {
+                playerSpeedMultiplier = 1;
+                keys['space'] = false;
+            }
+            updateControlButtons();
+        });
+
+        document.getElementById('btn-end-rest').addEventListener('click', () => {
+            if (gameState !== 'playing') return;
+            isPlayerResting = false;
+            updateControlButtons();
+        });
+
+        document.getElementById('btn-speed-2').addEventListener('click', () => {
+            if (gameState !== 'playing') return;
+            if (isGamePaused) return;
+            isPlayerResting = false;
+            playerSpeedMultiplier = playerSpeedMultiplier === 2 ? 1 : 2;
+            updateControlButtons();
+        });
+
+        document.getElementById('btn-speed-10').addEventListener('click', () => {
+            if (gameState !== 'playing') return;
+            if (isGamePaused) return;
+            isPlayerResting = false;
+            playerSpeedMultiplier = playerSpeedMultiplier === 10 ? 1 : 10;
+            updateControlButtons();
+        });
+
+        // 队伍选择卡片点击绑定
+        const cards = document.querySelectorAll('.team-card');
+        cards.forEach(card => {
+            card.addEventListener('click', () => {
+                cards.forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedTeam = card.getAttribute('data-team');
+                updateSelectedBoatUI();
+            });
+        });
+
+        // 默认初始化游戏状态以绘制第一帧静态背景
+        initGame();
+        updateSelectedBoatUI();
+        updateControlButtons();
+        
+        // 启动主引擎循环
+        requestAnimationFrame((timestamp) => {
+            lastTime = timestamp;
+            requestAnimationFrame(gameLoop);
+        });
+
+    </script>
+</body>
+</html>
