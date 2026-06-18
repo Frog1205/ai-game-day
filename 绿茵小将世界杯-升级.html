@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>绿茵小将世界杯 - 5人制按钮版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  height:100%;
+  overflow:hidden;
+  background:#102414;
+  font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;
+}
+body{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+canvas{
+  width:900px;
+  height:600px;
+  max-width:100vw;
+  max-height:100vh;
+  background:#24aa58;
+  border-radius:14px;
+  box-shadow:0 0 30px rgba(0,0,0,.55);
+}
+</style>
+</head>
+<body>
+<canvas id="game" width="900" height="600"></canvas>
+
+<script>
+/*
+=====================================================
+绿茵小将世界杯 - 5人制按钮版
+规则：5人制 = 1名门将 + 4名场上球员
+本方：你控制1人 + 3名AI队友 + 1名AI门将
+对方：4名AI防守球员 + 1名AI门将
+
+全部角色、球队、队徽均为原创虚构设定。
+无真实球员、真实球队Logo、真实未成年人肖像。
+
+孩子可修改参数：
+=====================================================
+*/
+const CONFIG = {
+  PLAYER_SPEED: 3.5,
+  PLAYER_SPRINT_SPEED: 5.7,
+  TEAMMATE_SPEED: 2.15,
+  OPPONENT_SPEED: 2.05,
+  GK_SPEED: 2.2,
+
+  MAX_ENERGY: 100,
+  ENERGY_RECOVER: 0.13,
+  SPRINT_COST: 0.7,
+
+  WIN_GOALS: 2,       // 先进2球胜利
+  MAX_MISTAKES: 3,    // 被抢断/射门被扑等最多失误
+  MATCH_TIME: 120,    // 秒
+
+  PASS_RANGE: 280,
+  SHOOT_MIN_X: 610,
+  TACKLE_DISTANCE: 25,
+  DRIBBLE_TIME: 55,
+
+  // 红牌后 AI 接管比赛参数
+  AI_TEAM_PASS_CHANCE: 0.020,
+  AI_TEAM_SHOOT_CHANCE: 0.018,
+  AI_DEFEND_PRESS_DISTANCE: 260
+};
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const W=900,H=600;
+const FIELD = {left:35,right:865,top:155,bottom:545};
+const LEFT_GOAL = {x:48,y:350,w:36,h:150};
+const RIGHT_GOAL = {x:852,y:350,w:36,h:150};
+
+let state="start"; // start / play / result
+let selectedDuration = 60; // 开始界面可选：60秒或180秒
+let showStartHelp = false; // 首页“游戏说明”弹层
+let showPlayRules = false; // 比赛中“规则”弹层
+let frame=0;
+let keys={};
+let mouse={x:0,y:0};
+
+let scoreHome=0;
+let scoreAway=0;
+let mistakes=CONFIG.MAX_MISTAKES;
+let energy=CONFIG.MAX_ENERGY;
+let matchTime=CONFIG.MATCH_TIME;
+let lastSecondTick=0;
+let win=false;
+
+// 个人战绩
+let stats = {
+  dribbles: 0,   // 过人次数
+  passes: 0,     // 成功传球次数
+  shotsOn: 0,    // 射正
+  shotsOff: 0    // 射偏/被扑
+};
+
+let player, homeGK, awayGK;
+let teammates=[];
+let opponents=[];
+let ball;
+let owner=null; // {team:"home"/"away", type:"player"/"mate"/"opp"/"gk", index:number}
+let ballFlying=false;
+let targetReceiver=null;
+let shot=null;
+
+let dribbleBoost=0;
+let playerSentOff=false; // 失误用完后，玩家红牌罚下，比赛继续
+let particles=[];
+let confetti=[];
+let fireworks=[];
+let message="";
+let messageTime=0;
+
+let buttons=[
+  {name:"规则",key:"",x:470,y:552,w:88,h:34,action:"rules"},
+  {name:"传球",key:"J",x:570,y:552,w:88,h:34,action:"pass"},
+  {name:"过人",key:"K",x:670,y:552,w:88,h:34,action:"dribble"},
+  {name:"射门",key:"L",x:770,y:552,w:88,h:34,action:"shoot"}
+];
+
+function rand(a,b){return Math.random()*(b-a)+a;}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function dist(a,b){let dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
+function moveToward(o,t,s){
+  let dx=t.x-o.x,dy=t.y-o.y,d=Math.sqrt(dx*dx+dy*dy)||1;
+  o.x+=dx/d*s;o.y+=dy/d*s;
+}
+function keepField(o){
+  o.x=clamp(o.x,FIELD.left+20,FIELD.right-20);
+  o.y=clamp(o.y,FIELD.top+35,FIELD.bottom-20);
+}
+function say(t,n=90){message=t;messageTime=n;}
+function textC(t,x,y,size,color,bold=true){
+  ctx.font=`${bold?"bold":"normal"} ${size}px Microsoft YaHei,Arial`;
+  ctx.fillStyle=color;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(t,x,y);
+}
+function textL(t,x,y,size,color,bold=false){
+  ctx.font=`${bold?"bold":"normal"} ${size}px Microsoft YaHei,Arial`;
+  ctx.fillStyle=color;ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(t,x,y);
+}
+function rr(x,y,w,h,r,fill,stroke){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke();}
+}
+
+/* ================= 初始化 ================= */
+
+function resetGame(){
+  frame=0;
+  scoreHome=0;
+  scoreAway=0;
+  mistakes=CONFIG.MAX_MISTAKES;
+  energy=CONFIG.MAX_ENERGY;
+  playerSentOff=false;
+  matchTime=selectedDuration;
+  stats = {dribbles:0, passes:0, shotsOn:0, shotsOff:0};
+  lastSecondTick=0;
+  win=false;
+  particles=[];
+  confetti=[];
+  fireworks=[];
+  initPlayers();
+  state="play";
+  say("5人制开赛！按钮：传球J、过人K、射门L");
+}
+
+function initPlayers(){
+  player={x:145,y:350,r:18,name:"追风小将",color:"#e9332d",role:"前锋",inv:0};
+
+  teammates=[
+    {x:210,y:245,r:18,name:"小翼",color:"#ffb12a",role:"边翼",homeX:210,homeY:245},
+    {x:225,y:455,r:18,name:"小虎",color:"#ffb12a",role:"接应",homeX:225,homeY:455},
+    {x:335,y:350,r:18,name:"小石",color:"#ffb12a",role:"中场",homeX:335,homeY:350}
+  ];
+
+  homeGK={x:70,y:350,r:19,name:"小盾",color:"#23c486",role:"门将",homeX:70,homeY:350};
+
+  opponents=[
+    {x:535,y:250,r:18,name:"星河一",color:"#26313f",homeX:535,homeY:250,phase:rand(0,6)},
+    {x:555,y:455,r:18,name:"星河二",color:"#26313f",homeX:555,homeY:455,phase:rand(0,6)},
+    {x:660,y:300,r:18,name:"星河三",color:"#26313f",homeX:660,homeY:300,phase:rand(0,6)},
+    {x:675,y:420,r:18,name:"星河四",color:"#26313f",homeX:675,homeY:420,phase:rand(0,6)}
+  ];
+
+  awayGK={x:830,y:350,r:19,name:"蓝盾",color:"#2687ff",role:"门将",homeX:830,homeY:350};
+
+  ball={x:player.x+20,y:player.y+18,r:10,vx:0,vy:0};
+  owner={team:"home",type:"player",index:-1};
+  ballFlying=false;
+  targetReceiver=null;
+  shot=null;
+  dribbleBoost=0;
+}
+
+/* ================= 背景 ================= */
+
+function drawBackground(){
+  let sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,"#71dcff");
+  sky.addColorStop(.27,"#c7f7ff");
+  sky.addColorStop(.28,"#2dad59");
+  sky.addColorStop(1,"#1f9b4d");
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle="#133b66";ctx.fillRect(0,45,W,95);
+  ctx.fillStyle="#235b91";ctx.fillRect(0,80,W,60);
+  for(let i=0;i<150;i++){
+    let x=(i*31)%W,y=58+(i%4)*19;
+    ctx.fillStyle=["#fff060","#ff5757","#fff","#66e27a","#5fd0ff"][i%5];
+    ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
+  }
+
+  for(let i=0;i<20;i++){
+    let x=i*48;
+    ctx.strokeStyle="#fff";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,28);ctx.lineTo(x+45,28);ctx.stroke();
+    ctx.fillStyle=["#ff3f3f","#ffe34b","#40de7b","#47b8ff"][i%4];
+    ctx.beginPath();ctx.moveTo(x+8,28);ctx.lineTo(x+28,28);ctx.lineTo(x+18,46);ctx.closePath();ctx.fill();
+  }
+
+  rr(318,50,264,65,8,"#0d243f","#d8f5ff");
+  textC("少年五人制世界杯",450,73,21,"#fff15c");
+  textC("追风少年队 VS 星河挑战队",450,102,14,"#fff",false);
+
+  for(let i=0;i<12;i++){
+    ctx.fillStyle=i%2===0?"rgba(255,255,255,.045)":"rgba(0,70,0,.06)";
+    ctx.fillRect(i*75,140,75,460);
+  }
+  for(let i=0;i<160;i++){
+    let x=(i*43)%W,y=150+(i*57)%430;
+    ctx.strokeStyle="rgba(255,255,255,.08)";
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+9,y+2);ctx.stroke();
+  }
+
+  ctx.strokeStyle="rgba(255,255,255,.9)";
+  ctx.lineWidth=4;
+  ctx.strokeRect(FIELD.left,FIELD.top,FIELD.right-FIELD.left,FIELD.bottom-FIELD.top);
+  ctx.beginPath();ctx.moveTo(450,FIELD.top);ctx.lineTo(450,FIELD.bottom);ctx.stroke();
+  ctx.beginPath();ctx.arc(450,350,67,0,Math.PI*2);ctx.stroke();
+
+  // 五人制禁区弧线风格
+  ctx.beginPath();ctx.arc(80,350,85,-Math.PI/2,Math.PI/2);ctx.stroke();
+  ctx.beginPath();ctx.arc(820,350,85,Math.PI/2,Math.PI*1.5);ctx.stroke();
+
+  drawGoal(48,350,"left");
+  drawGoal(852,350,"right");
+}
+
+function drawGoal(x,y,side){
+  ctx.strokeStyle="#fff";ctx.lineWidth=5;
+  if(side==="left") ctx.strokeRect(x-18,y-70,36,140);
+  else ctx.strokeRect(x-18,y-70,36,140);
+
+  ctx.strokeStyle="rgba(255,255,255,.4)";
+  ctx.lineWidth=1;
+  for(let i=0;i<6;i++){
+    ctx.beginPath();ctx.moveTo(x-18,y-70+i*28);ctx.lineTo(x+18,y-70+i*28);ctx.stroke();
+  }
+  for(let i=0;i<5;i++){
+    ctx.beginPath();ctx.moveTo(x-18+i*9,y-70);ctx.lineTo(x-18+i*9,y+70);ctx.stroke();
+  }
+}
+
+/* ================= 绘制角色和球 ================= */
+
+function drawBall(){
+  ctx.save();
+  ctx.translate(ball.x,ball.y);
+  ctx.rotate(frame*.16);
+  let r=ball.r;
+  ctx.fillStyle="#fff";
+  ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#111";ctx.lineWidth=1.5;ctx.stroke();
+
+  ctx.fillStyle="#111";
+  ctx.beginPath();
+  for(let i=0;i<5;i++){
+    let a=-Math.PI/2+i*Math.PI*2/5;
+    let px=Math.cos(a)*r*.36,py=Math.sin(a)*r*.36;
+    if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
+  }
+  ctx.closePath();ctx.fill();
+
+  ctx.strokeStyle="#111";
+  for(let i=0;i<5;i++){
+    let a=i*Math.PI*2/5;
+    ctx.beginPath();ctx.moveTo(Math.cos(a)*r*.48,Math.sin(a)*r*.48);
+    ctx.lineTo(Math.cos(a)*r*.95,Math.sin(a)*r*.95);ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPerson(p,tag){
+  if(p.inv>0 && Math.floor(frame/5)%2===0)return;
+  let swing=Math.sin(frame*.25+p.x*.01)*7;
+
+  ctx.fillStyle="rgba(0,0,0,.23)";
+  ctx.beginPath();ctx.ellipse(p.x,p.y+24,22,7,0,0,Math.PI*2);ctx.fill();
+
+  ctx.strokeStyle="#20242c";ctx.lineWidth=5;
+  ctx.beginPath();
+  ctx.moveTo(p.x-6,p.y+8);ctx.lineTo(p.x-12-swing*.3,p.y+25);
+  ctx.moveTo(p.x+6,p.y+8);ctx.lineTo(p.x+12+swing*.3,p.y+25);
+  ctx.stroke();
+
+  rr(p.x-14,p.y-14,28,30,7,p.color,null);
+
+  // 虚构闪电队徽
+  ctx.fillStyle="#fff145";
+  ctx.beginPath();
+  ctx.moveTo(p.x-2,p.y-10);ctx.lineTo(p.x+7,p.y-10);ctx.lineTo(p.x+1,p.y);
+  ctx.lineTo(p.x+8,p.y);ctx.lineTo(p.x-4,p.y+12);ctx.lineTo(p.x,p.y+3);
+  ctx.lineTo(p.x-8,p.y+3);ctx.closePath();ctx.fill();
+
+  ctx.fillStyle="#ffd0a0";
+  ctx.beginPath();ctx.arc(p.x,p.y-27,12,0,Math.PI*2);ctx.fill();
+
+  ctx.fillStyle="#281a16";
+  ctx.beginPath();ctx.arc(p.x-2,p.y-32,12,Math.PI,Math.PI*2);ctx.fill();
+
+  ctx.strokeStyle="#ffd0a0";ctx.lineWidth=5;
+  ctx.beginPath();
+  ctx.moveTo(p.x-13,p.y-5);ctx.lineTo(p.x-25,p.y+swing*.25);
+  ctx.moveTo(p.x+13,p.y-5);ctx.lineTo(p.x+25,p.y-swing*.25);
+  ctx.stroke();
+
+  textC(p.name,p.x,p.y-50,12,"#fff");
+  if(tag) textC(tag,p.x,p.y-68,13,"#fff145");
+}
+
+/* ================= 规则与 HUD ================= */
+
+function drawHUD(){
+  ctx.fillStyle="rgba(7,26,26,.86)";
+  ctx.fillRect(0,0,W,42);
+  textL("阶段：5人制比赛",16,21,15,"#fff",true);
+  textL(`比分：${scoreHome} - ${scoreAway}`,150,21,16,"#fff145",true);
+  textL(`时间：${Math.ceil(matchTime)}s`,255,21,15,"#fff",true);
+  textL("体力：",365,21,15,"#fff",true);
+  ctx.fillStyle="#173934";ctx.fillRect(415,12,105,18);
+  ctx.fillStyle=energy<30?"#ffbd28":"#35ee74";ctx.fillRect(415,12,105*(energy/100),18);
+  ctx.strokeStyle="#fff";ctx.strokeRect(415,12,105,18);
+  textL(`失误：${mistakes}`,545,21,15,"#ffdcdc",true);
+  textL(`胜负：只看比分`,655,21,15,"#fff",true);
+}
+
+function drawRulesPanel(){
+  rr(34,402,336,134,16,"rgba(0,0,0,.58)","rgba(255,255,255,.18)");
+  textL("规则说明",52,423,17,"#fff145",true);
+  textL("5人制 = 4名场上球员 + 1名门将",52,446,14,"#ffffff",true);
+  textL("J / 传球：传给位置更好的队友",52,472,14,"#ffffff");
+  textL("K / 过人：短暂无敌冲刺，消耗体力",52,496,14,"#ffffff");
+  textL("L / 射门：越靠近球门，进球率越高",52,520,14,"#ffffff");
+  textL("红牌后AI接管：会传球、射门、回防",52,543,12,"#d8f5ff");
+}
+
+function drawButtons(){
+  buttons.forEach(b=>{
+    let hover = mouse.x>=b.x && mouse.x<=b.x+b.w && mouse.y>=b.y && mouse.y<=b.y+b.h;
+    let fill = hover ? "#fff145" : "#ffd22a";
+    let stroke = "#e9332d";
+    let textColor = "#8b1a10";
+
+    if(b.action==="rules"){
+      fill = showPlayRules ? "#34d17a" : (hover ? "#e9fff1" : "#ffffff");
+      stroke = "#1b8e4d";
+      textColor = "#157844";
+    }
+
+    rr(b.x,b.y,b.w,b.h,12,fill,stroke);
+    const label = b.key ? `${b.name} ${b.key}` : b.name;
+    textC(label,b.x+b.w/2,b.y+b.h/2,16,textColor,true);
+  });
+}
+
+function drawMessage(){
+  if(messageTime>0){
+    messageTime--;
+    rr(230,54,440,42,13,"rgba(0,0,0,.66)",null);
+    textC(message,450,75,17,"#fff");
+  }
+}
+
+/* ================= 开始界面 ================= */
+
+function drawStart(){
+  drawBackground();
+
+  // 压暗球场背景，突出海报主视觉
+  ctx.fillStyle="rgba(5,18,14,.48)";
+  ctx.fillRect(0,0,W,H);
+
+  // 顶部标题
+  rr(176,34,548,70,22,"rgba(255,255,255,.94)","#f4d93f");
+  textC("绿茵小将世界杯",450,64,38,"#ef3b2d",true);
+  textC("热血开球 · 少年逐梦",450,92,16,"#168049",true);
+
+  // 中央海报主视觉
+  drawStartPoster();
+
+  // 底部控制条
+  rr(118,492,664,74,26,"rgba(255,255,255,.95)","#d7eadc");
+
+  rr(138,508,116,42,16,"#ffffff","#1b8e4d");
+  textC("游戏说明",196,529,18,"#157844",true);
+
+  rr(300,508,118,42,16,selectedDuration===60?"#fff145":"#ffffff","#1b8e4d");
+  textC("1分钟",359,529,20,selectedDuration===60?"#8b1a10":"#157844",true);
+
+  rr(436,508,118,42,16,selectedDuration===180?"#fff145":"#ffffff","#1b8e4d");
+  textC("3分钟",495,529,20,selectedDuration===180?"#8b1a10":"#157844",true);
+
+  rr(590,502,170,52,18,"#ffd22a","#ef3b2d");
+  textC("开始挑战",675,528,24,"#8b1a10",true);
+
+  textC("5V5 竞技 · AI配合跑位 · 全场唯一足球",450,583,16,"#ffffff");
+
+  if(showStartHelp){
+    drawStartHelpModal();
+  }
+}
+
+function drawStartPoster(){
+  // 海报底板
+  rr(88,120,724,346,28,"rgba(255,255,255,.10)","rgba(255,255,255,.22)");
+
+  // 海报内部渐变
+  const g = ctx.createLinearGradient(88,120,812,466);
+  g.addColorStop(0,"rgba(10,48,32,.86)");
+  g.addColorStop(0.45,"rgba(18,102,57,.78)");
+  g.addColorStop(1,"rgba(8,36,68,.84)");
+  rr(100,132,700,322,24,g,null);
+
+  // 聚光灯
+  for(let i=0;i<3;i++){
+    const x=[210,450,690][i];
+    const grad = ctx.createRadialGradient(x,185,10,x,185,130);
+    grad.addColorStop(0,"rgba(255,255,255,.28)");
+    grad.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.arc(x,185,130,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  // 背景速度线
+  ctx.strokeStyle="rgba(255,255,255,.10)";
+  ctx.lineWidth=4;
+  for(let i=0;i<8;i++){
+    ctx.beginPath();
+    ctx.moveTo(140+i*14,190+i*18);
+    ctx.lineTo(300+i*20,170+i*18);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(760-i*14,190+i*18);
+    ctx.lineTo(600-i*20,170+i*18);
+    ctx.stroke();
+  }
+
+  // 海报上方赛事标签
+  rr(300,146,300,34,16,"rgba(255,255,255,.92)",null);
+  textC("追风少年队  VS  星河挑战队",450,163,16,"#16352a",true);
+
+  // 左右主角形象
+  drawPosterCharacter(255,340,1.55,"#e9332d","#ffcc88","追风小将","left");
+  drawPosterCharacter(646,340,1.55,"#26313f","#ffd3aa","星河队长","right");
+
+  // 中间奖杯和足球
+  drawPosterTrophy(450,300,1.08);
+
+  // 中间VS徽章
+  rr(412,358,76,42,16,"#fff145","#ef3b2d");
+  textC("VS",450,379,24,"#8b1a10",true);
+
+  // 口号
+  textC("传球 · 过人 · 射门",450,416,22,"#ffffff",true);
+  textC("向世界赛场发起冲击！",450,442,17,"#fff145",true);
+
+  // 左右队名标签
+  rr(144,156,120,32,14,"rgba(233,51,45,.92)",null);
+  textC("追风少年队",204,172,16,"#ffffff",true);
+
+  rr(636,156,120,32,14,"rgba(38,49,63,.92)",null);
+  textC("星河挑战队",696,172,16,"#ffffff",true);
+}
+
+function drawPosterCharacter(x,y,s,jerseyColor,skinColor,label,facing){
+  ctx.save();
+  ctx.translate(x,y);
+  const dir = facing==="left" ? 1 : -1;
+  ctx.scale(s*dir,s);
+
+  // 光晕
+  const glow = ctx.createRadialGradient(0,-48,12,0,-48,78);
+  glow.addColorStop(0,"rgba(255,255,255,.30)");
+  glow.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=glow;
+  ctx.beginPath();
+  ctx.arc(0,-48,78,0,Math.PI*2);
+  ctx.fill();
+
+  // 影子
+  ctx.fillStyle="rgba(0,0,0,.22)";
+  ctx.beginPath();
+  ctx.ellipse(0,38,26,9,0,0,Math.PI*2);
+  ctx.fill();
+
+  // 速度线
+  ctx.strokeStyle="rgba(255,255,255,.42)";
+  ctx.lineWidth=2.5;
+  for(let i=0;i<4;i++){
+    ctx.beginPath();
+    ctx.moveTo(-50 - i*12, -12 + i*10);
+    ctx.lineTo(-22 - i*12, -12 + i*10);
+    ctx.stroke();
+  }
+
+  // 腿
+  ctx.strokeStyle="#1e2228";
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(-6,10);
+  ctx.lineTo(-18,34);
+  ctx.moveTo(8,10);
+  ctx.lineTo(18,36);
+  ctx.stroke();
+
+  // 身体
+  rr(-18,-18,36,34,8,jerseyColor,null);
+
+  // 队徽
+  ctx.fillStyle="#fff145";
+  ctx.beginPath();
+  ctx.moveTo(-2,-11);
+  ctx.lineTo(8,-11);
+  ctx.lineTo(1,-1);
+  ctx.lineTo(9,-1);
+  ctx.lineTo(-5,14);
+  ctx.lineTo(-1,4);
+  ctx.lineTo(-10,4);
+  ctx.closePath();
+  ctx.fill();
+
+  // 手臂
+  ctx.strokeStyle=skinColor;
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(-18,-4);
+  ctx.lineTo(-34,4);
+  ctx.moveTo(18,-4);
+  ctx.lineTo(34,-10);
+  ctx.stroke();
+
+  // 头
+  ctx.fillStyle=skinColor;
+  ctx.beginPath();
+  ctx.arc(0,-34,14,0,Math.PI*2);
+  ctx.fill();
+
+  // 头发
+  ctx.fillStyle="#291913";
+  ctx.beginPath();
+  ctx.arc(-2,-40,14,Math.PI,Math.PI*2);
+  ctx.fill();
+
+  // 足球（脚边）
+  ctx.save();
+  ctx.translate(26,28);
+  ctx.rotate(frame*0.05);
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.arc(0,0,8,0,Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle="#111";
+  ctx.lineWidth=1.2;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+
+  textC(label,x,y+86,15,"#ffffff",true);
+}
+
+function drawPosterTrophy(x,y,s){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(s,s);
+
+  // 光圈
+  const glow = ctx.createRadialGradient(0,-10,8,0,-10,90);
+  glow.addColorStop(0,"rgba(255,241,69,.50)");
+  glow.addColorStop(1,"rgba(255,241,69,0)");
+  ctx.fillStyle=glow;
+  ctx.beginPath();
+  ctx.arc(0,-10,90,0,Math.PI*2);
+  ctx.fill();
+
+  // 杯身
+  ctx.fillStyle="#ffd22a";
+  rr(-24,-44,48,52,10,"#ffd22a",null);
+  ctx.beginPath();
+  ctx.moveTo(-18,6);
+  ctx.lineTo(18,6);
+  ctx.lineTo(10,34);
+  ctx.lineTo(-10,34);
+  ctx.closePath();
+  ctx.fill();
+
+  // 手柄
+  ctx.strokeStyle="#ffd22a";
+  ctx.lineWidth=8;
+  ctx.beginPath();
+  ctx.arc(-28,-18,16,Math.PI*0.45,Math.PI*1.55,false);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(28,-18,16,-Math.PI*0.55,Math.PI*0.55,false);
+  ctx.stroke();
+
+  // 杯座
+  rr(-20,34,40,12,6,"#d39e10",null);
+  rr(-30,46,60,10,6,"#8b5b09",null);
+
+  // 足球徽记
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  ctx.arc(0,-18,12,0,Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle="#b98400";
+  ctx.lineWidth=1.5;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawStartHelpModal(){
+  ctx.fillStyle="rgba(0,0,0,.50)";
+  ctx.fillRect(0,0,W,H);
+
+  // 增高弹窗，给正文和按钮留出更舒适的间距
+  rr(145,72,610,450,28,"rgba(255,255,255,.97)","#f4d93f");
+  textC("游戏说明",450,120,34,"#ef3b2d",true);
+
+  // 小标题条
+  rr(205,148,490,42,16,"#f4fbf6",null);
+  textC("5人制：1名门将 + 4名场上球员",450,169,18,"#157844",true);
+
+  const lines = [
+    "• 你控制红衣“追风小将”，和 3 名 AI 队友配合进攻。",
+    "• 本方与对方都各有 1 名 AI 门将，自动守门与扑救。",
+    "• 方向键 / WASD：移动",
+    "• J：传球    K：过人    L：射门",
+    "• 过人会短暂无敌并加速，但会消耗体力。",
+    "• 传球会交给位置更好的队友，射门越靠近球门越容易进。",
+    "• 比赛胜负只看最终比分；失误用完，玩家红牌罚下。"
+  ];
+  lines.forEach((line,i)=>{
+    textL(line,190,226+i*38,18,"#31453c");
+  });
+
+  // 按钮下移，不再遮挡正文
+  rr(350,460,200,46,16,"#ffd22a","#ef3b2d");
+  textC("知道了",450,483,22,"#8b1a10",true);
+}
+
+/* ================= 比赛更新 ================= */
+
+function updatePlay(){
+  if(frame-lastSecondTick>=60){
+    lastSecondTick=frame;
+    matchTime--;
+    if(matchTime<=0){
+      endGame(scoreHome > scoreAway);
+      return;
+    }
+  }
+
+  updatePlayer();
+  updateAI();
+  updateBall();
+  checkTackle();
+  updateParticles();
+
+  if(player.inv>0)player.inv--;
+  if(dribbleBoost>0)dribbleBoost--;
+
+  // 比赛胜负只看比分；失误用完不会直接失败，只会让玩家红牌罚下
+  if(scoreHome>=CONFIG.WIN_GOALS) endGame(true);
+}
+
+function updatePlayer(){
+  // 红牌罚下后，玩家不能再移动、传球、过人或射门
+  if(playerSentOff){
+    energy = 0;
+    player.x = 18;
+    player.y = 585;
+    return;
+  }
+
+  let mx=0,my=0;
+  if(keys.ArrowLeft||keys.a||keys.A)mx--;
+  if(keys.ArrowRight||keys.d||keys.D)mx++;
+  if(keys.ArrowUp||keys.w||keys.W)my--;
+  if(keys.ArrowDown||keys.s||keys.S)my++;
+  let l=Math.sqrt(mx*mx+my*my)||1;mx/=l;my/=l;
+
+  let speed = CONFIG.PLAYER_SPEED;
+  let moving = mx!==0||my!==0;
+  if((keys[" "]||dribbleBoost>0)&&energy>0&&moving){
+    speed = dribbleBoost>0 ? CONFIG.PLAYER_SPRINT_SPEED+1.1 : CONFIG.PLAYER_SPRINT_SPEED;
+    energy-=CONFIG.SPRINT_COST;
+    addSpeedLine(player.x-20,player.y+rand(-8,8));
+  }else{
+    energy+=CONFIG.ENERGY_RECOVER;
+  }
+  energy=clamp(energy,0,100);
+
+  player.x+=mx*speed;
+  player.y+=my*speed;
+  keepField(player);
+
+  if(isOwner("home","player")){
+    ball.x=player.x+21;
+    ball.y=player.y+18;
+  }
+}
+
+function updateAI(){
+  let own = getOwnerObj();
+
+  // 本方3名AI队友：进攻时跑位、传球、射门；红牌后会完全接管比赛
+  teammates.forEach((m,i)=>{
+    let target;
+
+    if(isOwner("home","mate",i)){
+      // 持球AI：推进、随机横向带球，遇到机会会传球或射门
+      target = {
+        x: clamp(m.x + 95 + rand(-20,35), 180, 790),
+        y: clamp(m.y + Math.sin(frame*.035+i)*36 + rand(-1.2,1.2), 205, 520)
+      };
+
+      // 靠近球门时，AI会自主射门
+      if(m.x > CONFIG.SHOOT_MIN_X && Math.random() < CONFIG.AI_TEAM_SHOOT_CHANCE){
+        aiShootFrom(m);
+        return;
+      }
+
+      // 有防守压力时优先传球
+      const pressure = nearestOpponentDistance(m);
+      if(pressure < 78 && Math.random() < CONFIG.AI_TEAM_PASS_CHANCE*2.4){
+        const best = chooseBestHomeReceiver(m);
+        if(best){
+          passTo(best);
+          say(`${m.name} 避开逼抢，传球！`);
+          return;
+        }
+      }
+
+      // 红牌后或普通比赛中，AI会主动寻找更好位置的队友
+      if(Math.random() < (playerSentOff ? CONFIG.AI_TEAM_PASS_CHANCE*1.8 : CONFIG.AI_TEAM_PASS_CHANCE)){
+        const best = chooseBestHomeReceiver(m);
+        if(best && dist(m,best.obj)<CONFIG.PASS_RANGE){
+          passTo(best);
+          say(`${m.name} 分球给 ${best.obj.name}！`);
+          return;
+        }
+      }
+
+    }else{
+      const base = own || ball;
+
+      if(owner && owner.team==="home"){
+        // 本方持球：拉开宽度、前插接应
+        let lane=[-100,100,0][i];
+        let randomDrift = Math.sin(frame*.018+i*2.1)*24;
+        target={
+          x:clamp(base.x+95+i*24+rand(-.5,.5), 175, 765),
+          y:clamp(base.y+lane+randomDrift, 205, 520)
+        };
+      }else{
+        // 对方持球：回防，挡传球路线和射门路线
+        const threat = own || ball;
+        let guardY = [265,350,435][i];
+        target={
+          x:clamp(threat.x-70-i*18, 120, 620),
+          y:clamp((threat.y+guardY)/2 + Math.sin(frame*.025+i)*18, 205, 520)
+        };
+
+        // 如果离对方持球人很近，主动压迫
+        if(threat && dist(m,threat)<CONFIG.AI_DEFEND_PRESS_DISTANCE){
+          target={
+            x:clamp(threat.x-20, 90, 720),
+            y:clamp(threat.y + Math.sin(frame*.06+i)*20, 205, 520)
+          };
+        }
+      }
+    }
+
+    moveToward(m,target,CONFIG.TEAMMATE_SPEED);
+    keepField(m);
+
+    if(isOwner("home","mate",i)){
+      ball.x=m.x+21;
+      ball.y=m.y+18;
+    }
+  });
+
+  // 本方门将：守门，并在危险时靠近来球
+  let danger = owner && owner.team==="away" ? getOwnerObj() : ball;
+  moveToward(homeGK,{x:70,y:clamp(danger.y,280,420)},CONFIG.GK_SPEED);
+  homeGK.x=clamp(homeGK.x,58,115);
+  homeGK.y=clamp(homeGK.y,270,430);
+
+  // 对方4名AI：防守时逼抢/卡线；获得球权后会进攻、传球、射门
+  opponents.forEach((o,i)=>{
+    let target;
+
+    if(isOwner("away","opp",i)){
+      // 对方持球进攻
+      target={
+        x:clamp(o.x-85-rand(0,35), 90, 760),
+        y:clamp(o.y + Math.sin(frame*.035+i)*38, 205, 520)
+      };
+
+      // 靠近左侧球门时对方AI会射门
+      if(o.x < 285 && Math.random() < 0.018){
+        aiAwayShootFrom(o);
+        return;
+      }
+
+      // 对方随机传球
+      if(Math.random()<0.018){
+        const mates = getAwayPlayersForAI().filter(c=>c.obj!==o);
+        if(mates.length){
+          mates.forEach(c=>{
+            c.score = (900-c.obj.x)*0.8 + nearestHomeDistance(c.obj)*0.7 - dist(o,c.obj)*0.22 + rand(-25,25);
+          });
+          mates.sort((a,b)=>b.score-a.score);
+          passTo(mates[0]);
+          say(`${o.name} 横传组织进攻！`);
+          return;
+        }
+      }
+
+    }else if(own && owner && owner.team==="home"){
+      // 本方持球时，对手两个逼抢，两个堵线路
+      let sorted = opponents.map((op,idx)=>({idx,d:dist(op,own)})).sort((a,b)=>a.d-b.d);
+      let rank = sorted.findIndex(v=>v.idx===i);
+      if(rank<2){
+        target={x:own.x-15,y:own.y+Math.sin(frame*.05+o.phase)*20};
+      }else{
+        let mark = teammates[i%teammates.length];
+        target={x:(own.x+mark.x)/2,y:(own.y+mark.y)/2};
+      }
+    }else{
+      target={x:o.homeX + Math.sin(frame*.02+i)*30,y:o.homeY + Math.cos(frame*.018+i)*22};
+    }
+
+    moveToward(o,target,CONFIG.OPPONENT_SPEED);
+    keepField(o);
+
+    if(isOwner("away","opp",i)){
+      ball.x=o.x-18;
+      ball.y=o.y+18;
+    }
+  });
+
+  // 对方门将：守右门
+  let threat = owner && owner.team==="home" ? getOwnerObj() : ball;
+  moveToward(awayGK,{x:830,y:clamp(threat.y,280,420)},CONFIG.GK_SPEED);
+  awayGK.x=clamp(awayGK.x,785,840);
+  awayGK.y=clamp(awayGK.y,270,430);
+}
+
+function updateBall(){
+  if(!ballFlying)return;
+
+  if(shot){
+    shot.t+=0.04;
+    let t=clamp(shot.t,0,1);
+    let ease=1-Math.pow(1-t,3);
+    ball.x=shot.sx+(shot.tx-shot.sx)*ease;
+    ball.y=shot.sy+(shot.ty-shot.sy)*ease-Math.sin(t*Math.PI)*40;
+
+    if(t>=1){
+      resolveShot(shot.success);
+      shot=null;
+      ballFlying=false;
+    }
+    return;
+  }
+
+  if(targetReceiver){
+    moveToward(ball,targetReceiver.obj,7.5);
+    if(dist(ball,targetReceiver.obj)<18){
+      owner={team:targetReceiver.team,type:targetReceiver.type,index:targetReceiver.index};
+      if(owner.team==="home") stats.passes++;
+      targetReceiver=null;
+      ballFlying=false;
+      say(owner.type==="player"?"你接到了传球！":`${getOwnerObj().name} 接球！`);
+    }
+  }
+}
+
+function getOwnerObj(){
+  if(!owner)return null;
+  if(owner.team==="home" && owner.type==="player")return player;
+  if(owner.team==="home" && owner.type==="mate")return teammates[owner.index];
+  if(owner.team==="home" && owner.type==="gk")return homeGK;
+  if(owner.team==="away" && owner.type==="opp")return opponents[owner.index];
+  if(owner.team==="away" && owner.type==="gk")return awayGK;
+  return null;
+}
+function isOwner(team,type,index){
+  if(!owner)return false;
+  if(owner.team!==team||owner.type!==type)return false;
+  if(index===undefined)return true;
+  return owner.index===index;
+}
+
+function getHomePlayersForAI(){
+  // 玩家被罚下后，只返回 AI 队友；未罚下时也包含玩家，方便普通配合
+  const arr = [];
+  if(!playerSentOff) arr.push({team:"home",type:"player",index:-1,obj:player});
+  teammates.forEach((m,i)=>arr.push({team:"home",type:"mate",index:i,obj:m}));
+  return arr;
+}
+
+function getAwayPlayersForAI(){
+  return opponents.map((o,i)=>({team:"away",type:"opp",index:i,obj:o}));
+}
+
+function nearestOpponentDistance(p){
+  let d = 9999;
+  opponents.forEach(o=>d=Math.min(d,dist(p,o)));
+  d = Math.min(d, dist(p, awayGK));
+  return d;
+}
+
+function nearestHomeDistance(p){
+  let d = 9999;
+  teammates.forEach(m=>d=Math.min(d,dist(p,m)));
+  if(!playerSentOff) d = Math.min(d, dist(p,player));
+  d = Math.min(d, dist(p,homeGK));
+  return d;
+}
+
+function chooseBestHomeReceiver(fromObj){
+  const candidates = getHomePlayersForAI().filter(c=>c.obj!==fromObj);
+  if(candidates.length===0) return null;
+
+  candidates.forEach(c=>{
+    const safety = nearestOpponentDistance(c.obj);
+    const forward = c.obj.x;
+    const distancePenalty = dist(fromObj,c.obj)*0.28;
+    const lane = -Math.abs(c.obj.y-fromObj.y)*0.18;
+    c.score = forward*0.95 + safety*0.85 + lane - distancePenalty + rand(-30,30);
+  });
+  candidates.sort((a,b)=>b.score-a.score);
+  return candidates[0];
+}
+
+function aiShootFrom(ownerObj){
+  const distanceToGoal = Math.abs(RIGHT_GOAL.x-ownerObj.x);
+  const nearBonus = clamp((ownerObj.x-CONFIG.SHOOT_MIN_X)/230,0,1);
+  const angleGood = 1 - Math.abs(ownerObj.y-RIGHT_GOAL.y)/240;
+  const keeperPressure = dist(awayGK,ownerObj)<100 ? 0.22 : 0;
+  let chance = 0.20 + nearBonus*0.50 + angleGood*0.18 - keeperPressure + rand(-0.06,0.06);
+  chance = clamp(chance,0.12,0.82);
+
+  let success = Math.random()<chance;
+  let targetY = clamp(ownerObj.y + rand(-60,60), RIGHT_GOAL.y-62, RIGHT_GOAL.y+62);
+  if(success && Math.abs(awayGK.y-targetY)<36 && Math.random()<0.42) success=false;
+
+  owner=null;
+  ballFlying=true;
+  targetReceiver=null;
+  shot={sx:ball.x,sy:ball.y,tx:RIGHT_GOAL.x,ty:targetY,t:0,success};
+  say("AI队友起脚射门！");
+}
+
+function aiAwayShootFrom(ownerObj){
+  const nearBonus = clamp((CONFIG.SHOOT_MIN_X-(ownerObj.x-220))/230,0,1);
+  const angleGood = 1 - Math.abs(ownerObj.y-LEFT_GOAL.y)/240;
+  const keeperPressure = dist(homeGK,ownerObj)<100 ? 0.22 : 0;
+  let chance = 0.16 + (1-ownerObj.x/900)*0.45 + angleGood*0.18 - keeperPressure + rand(-0.05,0.05);
+  chance = clamp(chance,0.10,0.72);
+
+  let success = Math.random()<chance;
+  let targetY = clamp(ownerObj.y + rand(-55,55), LEFT_GOAL.y-60, LEFT_GOAL.y+60);
+  if(success && Math.abs(homeGK.y-targetY)<36 && Math.random()<0.46) success=false;
+
+  owner=null;
+  ballFlying=true;
+  targetReceiver=null;
+  shot={sx:ball.x,sy:ball.y,tx:LEFT_GOAL.x,ty:targetY,t:0,success,away:true};
+  say("星河挑战队射门！");
+}
+
+
+
+function checkTackle(){
+  let own=getOwnerObj();
+  if(!own || ballFlying)return;
+
+  if(owner.team==="home"){
+    for(let i=0;i<opponents.length;i++){
+      if(dist(opponents[i],own)<CONFIG.TACKLE_DISTANCE){
+        if(dribbleBoost>0)return;
+        loseBall("被对方抢断！失误 -1");
+        return;
+      }
+    }
+
+    // 门将扑脚下球
+    if(dist(awayGK,own)<30 && own.x>770){
+      if(dribbleBoost>0)return;
+      loseBall("对方门将出击没收！失误 -1");
+      return;
+    }
+  }else if(owner.team==="away"){
+    for(let i=0;i<teammates.length;i++){
+      if(dist(teammates[i],own)<CONFIG.TACKLE_DISTANCE+2){
+        owner={team:"home",type:"mate",index:i};
+        ballFlying=false;
+        targetReceiver=null;
+        shot=null;
+        ball.x=teammates[i].x+21;
+        ball.y=teammates[i].y+18;
+        burst(ball.x,ball.y,"#fff145",16);
+        say(`${teammates[i].name} 抢断成功，追风少年队反击！`);
+        return;
+      }
+    }
+
+    if(dist(homeGK,own)<32 && own.x<120){
+      owner={team:"home",type:"gk",index:-1};
+      ball.x=homeGK.x+18;
+      ball.y=homeGK.y+18;
+      burst(ball.x,ball.y,"#fff145",16);
+      say("小盾门将没收来球！");
+      return;
+    }
+  }
+}
+
+function loseBall(t){
+  if(playerSentOff) return;
+
+  mistakes--;
+  burst(ball.x,ball.y,"#ff4d4d",22);
+
+  if(mistakes<=0){
+    sendPlayerOff();
+    return;
+  }
+
+  say(t);
+  resetPositionsAfterMistake();
+}
+
+function sendPlayerOff(){
+  playerSentOff = true;
+  mistakes = 0;
+  dribbleBoost = 0;
+  player.inv = 0;
+  owner = {team:"home", type:"mate", index:0};
+  ballFlying = false;
+  targetReceiver = null;
+  shot = null;
+  teammates[0].x = 210;
+  teammates[0].y = 245;
+  ball.x = teammates[0].x + 21;
+  ball.y = teammates[0].y + 18;
+  say("红牌！追风小将被罚下，AI队友接管进攻和防守！", 160);
+}
+
+function resetPositionsAfterMistake(){
+  player.x=145;player.y=350;player.inv=90;
+  teammates[0].x=210;teammates[0].y=245;
+  teammates[1].x=225;teammates[1].y=455;
+  teammates[2].x=335;teammates[2].y=350;
+  opponents.forEach(o=>{o.x=o.homeX;o.y=o.homeY;});
+  awayGK.x=830;awayGK.y=350;
+  homeGK.x=70;homeGK.y=350;
+  if(playerSentOff){
+    owner={team:"home",type:"mate",index:0};
+    ballFlying=false;targetReceiver=null;shot=null;
+    ball.x=teammates[0].x+21;ball.y=teammates[0].y+18;
+  }else{
+    owner={team:"home",type:"player",index:-1};
+    ballFlying=false;targetReceiver=null;shot=null;
+    ball.x=player.x+21;ball.y=player.y+18;
+  }
+}
+
+/* ================= 按钮动作 ================= */
+
+function doAction(action){
+  if(state!=="play")return;
+  if(action==="rules"){
+    showPlayRules = !showPlayRules;
+    return;
+  }
+  if(action==="pass") actionPass();
+  if(action==="dribble") actionDribble();
+  if(action==="shoot") actionShoot();
+}
+
+function actionPass(){
+  if(playerSentOff && (!owner || owner.type==="player")){
+    say("你已被红牌罚下，AI队友正在继续比赛！");
+    return;
+  }
+  if(!owner || owner.team!=="home" || ballFlying){
+    say("先拿到球，再传球！");
+    return;
+  }
+
+  let own=getOwnerObj();
+  let candidates=[
+    ...(!playerSentOff ? [{team:"home",type:"player",index:-1,obj:player}] : []),
+    ...teammates.map((m,i)=>({team:"home",type:"mate",index:i,obj:m}))
+  ].filter(c=>c.obj!==own);
+
+  // 选择更靠前、距离适中、离防守更远的队友
+  candidates.forEach(c=>{
+    let nearestOpp=999;
+    opponents.forEach(o=>nearestOpp=Math.min(nearestOpp,dist(c.obj,o)));
+    c.score = c.obj.x*1.2 - Math.abs(c.obj.y-own.y)*0.25 + nearestOpp*0.55 - dist(c.obj,own)*0.15;
+  });
+  candidates.sort((a,b)=>b.score-a.score);
+  let best=candidates[0];
+
+  if(dist(own,best.obj)>CONFIG.PASS_RANGE){
+    say("队友太远，传球风险太大！");
+    return;
+  }
+  passTo(best);
+  say(`传球给 ${best.obj.name}！`);
+}
+
+function passTo(receiver){
+  owner=null;
+  ballFlying=true;
+  targetReceiver=receiver;
+  shot=null;
+  burst(ball.x,ball.y,"#fff145",8);
+}
+
+function actionDribble(){
+  if(playerSentOff){
+    say("红牌罚下后不能再主动过人，继续看AI队友发挥！");
+    return;
+  }
+  if(!isOwner("home","player")){
+    say("只有你持球时才能主动过人！");
+    return;
+  }
+  if(energy<18){
+    say("体力不足，先缓一缓！");
+    return;
+  }
+  dribbleBoost=CONFIG.DRIBBLE_TIME;
+  player.inv=CONFIG.DRIBBLE_TIME;
+  energy-=12;
+  stats.dribbles++;
+  scoreHome+=0; // 占位，方便孩子添加加分逻辑
+  say("过人启动！短暂无敌冲刺！");
+  burst(player.x,player.y,"#fff145",12);
+}
+
+function actionShoot(){
+  if(playerSentOff && (!owner || owner.type==="player")){
+    say("你已被罚下，AI队友可以继续进攻！");
+    return;
+  }
+  if(!owner || owner.team!=="home" || ballFlying){
+    say("先拿到球，再射门！");
+    return;
+  }
+
+  let own=getOwnerObj();
+  let distanceToGoal = Math.abs(RIGHT_GOAL.x-own.x);
+  let nearBonus = clamp((own.x-CONFIG.SHOOT_MIN_X)/220,0,1);
+  let angleGood = 1 - Math.abs(own.y-RIGHT_GOAL.y)/230;
+  let keeperPressure = dist(awayGK,own)<95 ? 0.18 : 0;
+  let chance = 0.25 + nearBonus*0.48 + angleGood*0.18 - keeperPressure;
+  chance = clamp(chance,0.15,0.88);
+
+  let success = Math.random()<chance;
+  let targetY = clamp(own.y + rand(-55,55), RIGHT_GOAL.y-60, RIGHT_GOAL.y+60);
+  let targetX = RIGHT_GOAL.x;
+
+  // 门将有概率扑救
+  if(success && Math.abs(awayGK.y-targetY)<35 && Math.random()<0.45){
+    success=false;
+  }
+
+  owner=null;
+  ballFlying=true;
+  targetReceiver=null;
+  shot={sx:ball.x,sy:ball.y,tx:targetX,ty:targetY,t:0,success};
+  say("射门！");
+}
+
+function resolveShot(success){
+  // 对方AI射门
+  if(shot && shot.away){
+    if(success){
+      scoreAway++;
+      burst(LEFT_GOAL.x,ball.y,"#8ed7ff",45);
+      say("星河挑战队进球！");
+      resetAfterGoal();
+    }else{
+      burst(LEFT_GOAL.x,ball.y,"#fff145",25);
+      say("小盾门将扑救成功！");
+      resetAfterGoal();
+    }
+    return;
+  }
+
+  // 本方射门
+  if(success){
+    stats.shotsOn++;
+    scoreHome++;
+    burst(RIGHT_GOAL.x,ball.y,"#fff145",45);
+    say(playerSentOff ? "AI队友破门！追风少年队进球！" : "进球！追风少年队领先！");
+    resetAfterGoal();
+  }else{
+    stats.shotsOff++;
+    if(!playerSentOff) mistakes--;
+    burst(RIGHT_GOAL.x,ball.y,"#8ed7ff",25);
+    if(!playerSentOff && mistakes<=0){
+      sendPlayerOff();
+    }else{
+      say(playerSentOff ? "AI队友射门被扑出！" : "被门将扑出！失误 -1");
+      resetPositionsAfterMistake();
+    }
+  }
+}
+
+function resetAfterGoal(){
+  player.x=145;player.y=350;
+  teammates[0].x=210;teammates[0].y=245;
+  teammates[1].x=225;teammates[1].y=455;
+  teammates[2].x=335;teammates[2].y=350;
+  opponents.forEach(o=>{o.x=o.homeX;o.y=o.homeY;});
+  awayGK.x=830;awayGK.y=350;homeGK.x=70;homeGK.y=350;
+  if(playerSentOff){
+    owner={team:"home",type:"mate",index:0};
+    ballFlying=false;shot=null;targetReceiver=null;
+    ball.x=teammates[0].x+21;ball.y=teammates[0].y+18;
+  }else{
+    owner={team:"home",type:"player",index:-1};
+    ballFlying=false;shot=null;targetReceiver=null;
+    ball.x=player.x+21;ball.y=player.y+18;
+  }
+}
+
+/* ================= 绘制比赛 ================= */
+
+function drawPlay(){
+  drawBackground();
+
+  // 射门区提示
+  ctx.setLineDash([10,8]);
+  ctx.strokeStyle="#fff145";
+  ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(CONFIG.SHOOT_MIN_X,FIELD.top+8);ctx.lineTo(CONFIG.SHOOT_MIN_X,FIELD.bottom-8);ctx.stroke();
+  ctx.setLineDash([]);
+  textC("进入这里射门更准",CONFIG.SHOOT_MIN_X,145,15,"#fff145");
+
+  // 持球传球参考线
+  let own=getOwnerObj();
+  if(own && owner.team==="home"){
+    teammates.forEach(m=>{
+      ctx.strokeStyle="rgba(255,255,255,.22)";
+      ctx.setLineDash([6,8]);
+      ctx.beginPath();ctx.moveTo(own.x,own.y);ctx.lineTo(m.x,m.y);ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+
+  drawPerson(homeGK,"门将");
+  teammates.forEach((m,i)=>drawPerson(m,isOwner("home","mate",i)?"持球":null));
+  if(!playerSentOff){
+    drawPerson(player,isOwner("home","player")?"你持球":null);
+  }else{
+    rr(18,548,150,36,12,"rgba(185,27,27,.86)","#ffdfdf");
+    textC("红牌罚下",93,566,16,"#ffffff",true);
+  }
+
+  opponents.forEach((o,i)=>drawPerson(o,isOwner("away","opp",i)?"持球":null));
+  drawPerson(awayGK,"门将");
+
+  // 全场唯一足球，只在这里绘制
+  if(shot){
+    ctx.strokeStyle="rgba(255,255,255,.65)";
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(shot.sx,shot.sy);
+    ctx.quadraticCurveTo((shot.sx+ball.x)/2,(shot.sy+ball.y)/2-50,ball.x,ball.y);
+    ctx.stroke();
+  }
+  drawBall();
+
+  if(dribbleBoost>0) textC("过人中！",player.x,player.y-86,18,"#fff145");
+
+  drawParticles();
+  drawHUD();
+  if(showPlayRules) drawRulesPanel();
+  drawButtons();
+  drawMessage();
+}
+
+/* ================= 结算 ================= */
+
+function endGame(isWin){
+  win=isWin;
+  state="result";
+
+  if(win){
+    for(let i=0;i<90;i++){
+      confetti.push({
+        x:rand(0,W),y:rand(-300,0),vx:rand(-1.6,1.6),vy:rand(1.8,4.2),
+        s:rand(4,9),rot:rand(0,6.28),
+        color:["#ff4141","#fff145","#35ee74","#45bdff","#ff77d4"][i%5]
+      });
+    }
+  }
+}
+
+function updateResult(){
+  updateParticles();
+  if(win && frame%34===0){
+    fireworks.push({
+      x:rand(120,780),y:rand(70,290),life:45,
+      color:["#ff4141","#fff145","#35ee74","#45bdff"][Math.floor(rand(0,4))],
+      dots:Array.from({length:24},()=>({a:rand(0,Math.PI*2),s:rand(1.4,4.2)}))
+    });
+  }
+  fireworks.forEach(f=>f.life--);
+  fireworks=fireworks.filter(f=>f.life>0);
+
+  confetti.forEach(c=>{
+    c.x+=c.vx;c.y+=c.vy;c.rot+=.12;
+    if(c.y>620){c.y=rand(-160,0);c.x=rand(0,W);}
+  });
+}
+
+function drawResult(){
+  drawBackground();
+  ctx.fillStyle="rgba(0,0,0,.48)";
+  ctx.fillRect(0,0,W,H);
+  if(win){drawFireworks();drawConfetti();}
+
+  rr(165,92,570,400,28,"rgba(255,255,255,.95)",win?"#fff145":"#7bd7ff");
+
+  if(scoreHome > scoreAway){
+    textC("少年小将，世界舞台见！",450,160,38,"#e9332d");
+    textC("追风少年队赢下五人制挑战赛！",450,212,22,"#10703a");
+  }else if(scoreHome < scoreAway){
+    textC("再练一次，下一脚就是奇迹！",450,160,34,"#2687ff");
+    textC("比分落后也别灰心，下一场追回来。",450,212,21,"#10703a");
+  }else{
+    textC("势均力敌，精彩平局！",450,160,36,"#2687ff");
+    textC("双方比分相同，继续训练下次争胜。",450,212,21,"#10703a");
+  }
+
+  textC(`队伍比分：追风少年队 ${scoreHome} - ${scoreAway} 星河挑战队`,450,270,23,"#102414");
+  textC(`游戏时长：${selectedDuration===60?"1分钟":"3分钟"}    状态：${playerSentOff?"红牌罚下":"正常完赛"}`,450,310,20,"#102414");
+
+  rr(250,338,400,74,16,"#f3fff1","#70bf68");
+  textC("个人战绩",450,358,20,"#10703a");
+  textC(`过人：${stats.dribbles}    传球：${stats.passes}    射正：${stats.shotsOn}    射偏/被扑：${stats.shotsOff}`,450,388,19,"#102414");
+
+  rr(330,430,240,58,18,"#ffd22a","#e9332d");
+  textC("返回首页",450,459,25,"#8b1a10");
+
+  textC("所有队伍和角色均为虚构原创。",450,540,18,"#fff");
+}
+
+/* ================= 特效 ================= */
+
+function addSpeedLine(x,y){
+  particles.push({type:"line",x,y,vx:-5,vy:0,life:18,color:"rgba(255,255,255,.85)"});
+}
+function burst(x,y,color,n=16){
+  for(let i=0;i<n;i++){
+    particles.push({type:"dot",x,y,vx:rand(-3.5,3.5),vy:rand(-3.5,3.5),life:rand(20,45),color});
+  }
+}
+function updateParticles(){
+  particles.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;p.life--;
+    if(p.type==="dot")p.vy+=.08;
+  });
+  particles=particles.filter(p=>p.life>0);
+}
+function drawParticles(){
+  particles.forEach(p=>{
+    ctx.globalAlpha=clamp(p.life/40,0,1);
+    if(p.type==="line"){
+      ctx.strokeStyle=p.color;ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-28,p.y);ctx.stroke();
+    }else{
+      ctx.fillStyle=p.color;
+      ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  });
+}
+function drawFireworks(){
+  fireworks.forEach(f=>{
+    let t=1-f.life/45;
+    ctx.globalAlpha=f.life/45;
+    ctx.strokeStyle=f.color;ctx.lineWidth=3;
+    f.dots.forEach(d=>{
+      let x=f.x+Math.cos(d.a)*d.s*t*27;
+      let y=f.y+Math.sin(d.a)*d.s*t*27;
+      ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(x,y);ctx.stroke();
+    });
+    ctx.globalAlpha=1;
+  });
+}
+function drawConfetti(){
+  confetti.forEach(c=>{
+    ctx.save();ctx.translate(c.x,c.y);ctx.rotate(c.rot);
+    ctx.fillStyle=c.color;ctx.fillRect(-c.s/2,-c.s/2,c.s,c.s*.62);
+    ctx.restore();
+  });
+}
+
+/* ================= 输入 ================= */
+
+window.addEventListener("keydown",e=>{
+  keys[e.key]=true;
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key))e.preventDefault();
+
+  if(e.key==="j"||e.key==="J")doAction("pass");
+  if(e.key==="k"||e.key==="K")doAction("dribble");
+  if(e.key==="l"||e.key==="L")doAction("shoot");
+});
+window.addEventListener("keyup",e=>{keys[e.key]=false;});
+
+canvas.addEventListener("mousemove",e=>{
+  let r=canvas.getBoundingClientRect();
+  mouse.x=(e.clientX-r.left)*(canvas.width/r.width);
+  mouse.y=(e.clientY-r.top)*(canvas.height/r.height);
+});
+
+canvas.addEventListener("click",e=>{
+  let r=canvas.getBoundingClientRect();
+  let x=(e.clientX-r.left)*(canvas.width/r.width);
+  let y=(e.clientY-r.top)*(canvas.height/r.height);
+
+  if(state==="start"){
+    if(showStartHelp){
+      if(x>=350&&x<=550&&y>=460&&y<=506){
+        showStartHelp=false;
+        return;
+      }
+      // 点击遮罩不关闭，避免误触
+      return;
+    }
+
+    if(x>=138&&x<=254&&y>=508&&y<=550){
+      showStartHelp=true;
+      return;
+    }
+    if(x>=300&&x<=418&&y>=508&&y<=550){
+      selectedDuration=60;
+      return;
+    }
+    if(x>=436&&x<=554&&y>=508&&y<=550){
+      selectedDuration=180;
+      return;
+    }
+    if(x>=590&&x<=760&&y>=502&&y<=554){
+      resetGame();
+      return;
+    }
+    return;
+  }
+
+  if(state==="result"){
+    if(x>=330&&x<=570&&y>=430&&y<=488){
+      state="start";
+      showStartHelp=false;
+      particles=[];
+      fireworks=[];
+      confetti=[];
+      message="";
+      messageTime=0;
+      showPlayRules=false;
+      return;
+    }
+    return;
+  }
+
+  if(state==="play"){
+    buttons.forEach(b=>{
+      if(x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h)doAction(b.action);
+    });
+  }
+});
+
+/* ================= 主循环 ================= */
+
+function loop(){
+  frame++;
+
+  if(state==="start")drawStart();
+  else if(state==="play"){updatePlay();drawPlay();}
+  else if(state==="result"){updateResult();drawResult();}
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

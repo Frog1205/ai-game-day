@@ -154,6 +154,15 @@ body::before{
 }
 .card-d:hover{border-color:rgba(255,179,0,.4)}
 
+/* 类型 E - 绿茵青蓝 */
+.card-e .type-badge{
+  background:linear-gradient(135deg,#16a34a,#0ea5e9);
+}
+.card-e::before{
+  background:linear-gradient(135deg,rgba(22,163,74,.05),rgba(14,165,233,.08));
+}
+.card-e:hover{border-color:rgba(22,163,74,.4)}
+
 /* 卡片内容 */
 .card-info{min-width:0}
 .card-info h2{
@@ -192,6 +201,9 @@ body::before{
 .card-d .card-action{
   background:linear-gradient(135deg,#2e7d32,#d32f2f);
 }
+.card-e .card-action{
+  background:linear-gradient(135deg,#16a34a,#0ea5e9);
+}
 .card-action .arrow{
   transition:transform .3s;font-size:18px;
 }
@@ -225,7 +237,7 @@ body::before{
 <header class="header">
   <div class="logo">AI CREATOR CAMP</div>
   <h1 class="title">AI创客家 · 一日游戏体验</h1>
-  <p class="subtitle">四个 AI 生成的游戏，从休闲解谜到竞速策略，等你挑战</p>
+  <p class="subtitle">五个 AI 生成的游戏，从休闲解谜到竞速绿茵，等你挑战</p>
   <div class="divider"></div>
 </header>
 
@@ -289,6 +301,21 @@ body::before{
       </div>
     </div>
     <div class="card-action">开始竞速 <span class="arrow">→</span></div>
+  </a>
+
+  <!-- 类型 E：体育 / 绿茵 -->
+  <a class="game-card card-e" href="绿茵小将世界杯-升级.html">
+    <div class="type-badge">E<span class="type-label">体育</span></div>
+    <div class="card-info">
+      <h2><span class="emoji">⚽</span> 绿茵小将世界杯</h2>
+      <p class="card-desc">5 人制按钮足球，绿茵场上点球决胜！选择球队、传球射门，与对手在世界杯舞台上一较高下。简单易上手，激情看实力。</p>
+      <div class="card-tags">
+        <span class="tag">体育</span>
+        <span class="tag">足球</span>
+        <span class="tag">世界杯</span>
+      </div>
+    </div>
+    <div class="card-action">开始比赛 <span class="arrow">→</span></div>
   </a>
 
 </main>
